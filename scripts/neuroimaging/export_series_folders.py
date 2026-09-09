@@ -11,6 +11,17 @@ import re
 from pathlib import Path
 
 
+SEQUENCE_FOLDER_PATTERN = re.compile(
+    r"^(?:EP2D_|LOCALIZER|PHOENIXZIPREPORT|SMS\d*_(?:BOLD|DIFF)_|T1_|T2_)",
+    re.IGNORECASE,
+)
+
+
+def is_sequence_folder(name: str) -> bool:
+    """Return whether a folder name matches this cohort's sequence conventions."""
+    return SEQUENCE_FOLDER_PATTERN.match(name) is not None
+
+
 def subject_id_from_folder(name: str) -> str:
     """Convert THU_YYYYMMDD_NUMBER_* to a compact subject identifier."""
     match = re.match(
@@ -22,31 +33,28 @@ def subject_id_from_folder(name: str) -> str:
 
 
 def scan_subject(subject_dir: Path) -> dict:
-    """List sequence folders under subject/MRIdata/*/* without reading files."""
+    """Find scan folders by their immediate sequence-folder names at any depth."""
     mri_dir = subject_dir / "MRIdata"
-    scan_groups = []
+    detected_scans = []
 
     if mri_dir.is_dir():
-        study_dirs = sorted(
-            (
-                study_dir
-                for export_dir in mri_dir.iterdir()
-                if export_dir.is_dir()
-                for study_dir in export_dir.iterdir()
-                if study_dir.is_dir()
-            ),
-            key=lambda path: str(path),
+        for dirpath, dirnames, _ in os.walk(mri_dir):
+            dirnames.sort()
+            matched_names = [name for name in dirnames if is_sequence_folder(name)]
+            if matched_names:
+                detected_scans.append((Path(dirpath), list(dirnames)))
+                # Sequence directories contain DICOM files, which are irrelevant here.
+                dirnames[:] = [name for name in dirnames if not is_sequence_folder(name)]
+
+    scan_groups = [
+        {
+            "scan_group": f"scan_{index:02d}",
+            "sequence_folders": sequence_folders,
+        }
+        for index, (_, sequence_folders) in enumerate(
+            sorted(detected_scans, key=lambda item: str(item[0])), 1
         )
-        for index, study_dir in enumerate(study_dirs, 1):
-            sequence_folders = sorted(
-                child.name for child in study_dir.iterdir() if child.is_dir()
-            )
-            scan_groups.append(
-                {
-                    "scan_group": f"scan_{index:02d}",
-                    "sequence_folders": sequence_folders,
-                }
-            )
+    ]
 
     return {
         "subject_id": subject_id_from_folder(subject_dir.name),

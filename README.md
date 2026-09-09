@@ -1,6 +1,8 @@
 # MRI series-folder inventory
 
-`export_series_folders.py` lists only the sequence folders visible directly inside each scanner Study directory (`subject/MRIdata/*/*/sequence_folder`). It performs no file inspection, DICOM reading, or BIDS inference.
+`export_series_folders.py` recursively searches below each subject's `MRIdata`. A directory is treated as one scan when at least one of its immediate child-folder names matches this cohort's sequence conventions: `EP2D_`, `LOCALIZER`, `PHOENIXZIPREPORT`, `SMS*_BOLD_`, `SMS*_DIFF_`, `T1_`, or `T2_`. It then exports all immediate child folders of that scan directory. It performs no file inspection, DICOM reading, or BIDS inference.
+
+This detection is independent of depth, so both `MRIdata/scan/sequence` and `MRIdata/wrapper/scan/sequence` layouts are supported. A scan containing only unfamiliar sequence names will not be detected until its prefix is added to `SEQUENCE_FOLDER_PATTERN`.
 
 It writes two complementary files:
 
