@@ -40,14 +40,18 @@ JSONL 默认写入 `outputs/logs/neuroimaging/series_folder_inventory/`，CSV �
 
 - REST0--REST99 只保留 180 帧且采集时间最晚的一条；重复 SST、NBACK、SWITCH
   保留被试内帧数最多、时间最晚的一条。FM、PM、PR 和 NBACK_V 不处理。
-- 每个 scan 内不能同时出现普通 fmap 和 `_TASK` fmap；较短的 fmap 视为未完成，
+- 同一个 scan 容器内不能同时出现普通 fmap 和 `_TASK` fmap；二者位于不同
+  scan 时不冲突。较短的 fmap 视为未完成，
   过滤后 AP/PA 数量必须平衡。所有有效配对按采集时间统一编号为
   `run-1`、`run-2` 等，同一对 AP/PA 共用 run。
 - fmap 的 `IntendedFor` 只包含同一来源 scan 中最终保留的 BOLD，并同时写入
   `B0FieldIdentifier`/`B0FieldSource`。
 - T1 仅接受唯一的 Prescan Normalize MPRAGE；多个或缺少该重建时终止。
 - 主 DWI 使用精确目录名识别；ADC、FA、COLFA、TENSOR、TRACEW 等派生序列
-  显式忽略。多条主 DWI 或反向 B0 暂不自动选择，而是终止并要求人工判断。
+  显式忽略。重复主 DWI、DWI B0 和 T2 均先选择 DICOM 文件数最多者，数量
+  相同时选择采集时间最晚者。
+- 同一任务存在多个行为 CSV 时，解析文件名中的日期和时间到毫秒，并选择
+  时间最晚者；无法解析时间或最晚时间并列时终止。
 - 批处理入口在转换前拒绝重复源目录和映射到同一 BIDS 标签的多个源目录。
 - 转换不依赖文件夹清单 CSV；每个被试在 NIfTI 中间目录写出
   `conversion_manifest.tsv`。

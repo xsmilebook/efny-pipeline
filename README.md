@@ -48,6 +48,11 @@ derived DWI folders, pairs complete AP/PA fieldmaps, and assigns fieldmap runs
 by acquisition time. It refuses unresolved duplicates and existing subject
 output directories instead of overwriting them.
 
+Repeated T2, main DWI, and DWI B0 series are resolved by keeping the series
+with the most DICOM files and then the latest acquisition time. When multiple
+event CSV files match one retained task, the timestamp in the filename selects
+the latest file.
+
 Run a validated subject list from MATLAB:
 
 ```matlab

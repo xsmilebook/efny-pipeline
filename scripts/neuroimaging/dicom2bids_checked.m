@@ -299,7 +299,7 @@ function [series, fmapPairs] = selectSeries(series, scanGroups, subjectPrefix)
 
 series = selectBoldSeries(series, subjectPrefix);
 series = selectT1Series(series, subjectPrefix);
-series = selectSingleOptionalSeries(series, 't2', subjectPrefix);
+series = selectLongestLatestSeries(series, 't2', subjectPrefix);
 series = selectDwiSeries(series, subjectPrefix);
 [series, fmapPairs] = selectFieldmapPairs(series, scanGroups, subjectPrefix);
 end
@@ -364,40 +364,43 @@ end
 end
 
 
-function series = selectSingleOptionalSeries(series, kind, subjectPrefix)
+function series = selectLongestLatestSeries(series, kind, subjectPrefix)
+%SELECTLONGESTLATESTSERIES Prefer file count, then acquisition time.
+
 indices = find(strcmp({series.kind}, kind));
 if isempty(indices)
     return;
 end
-assert(isscalar(indices), ...
-    '%s has multiple unresolved %s series: %s', subjectPrefix, kind, ...
-    strjoin({series(indices).path}, ' | '));
-series(indices).selected = true;
-series(indices).decision = ['keep_unique_', kind];
+
+maximumFiles = max([series(indices).fileCount]);
+longest = indices([series(indices).fileCount] == maximumFiles);
+chosen = chooseLatestSeries(series, longest, ...
+    sprintf('%s %s', subjectPrefix, kind));
+series(chosen).selected = true;
+series(chosen).decision = ['keep_longest_latest_', kind];
+
+for index = reshape(setdiff(indices, chosen), 1, [])
+    if series(index).fileCount < maximumFiles
+        series(index).decision = ['drop_shorter_', kind];
+    else
+        series(index).decision = ['drop_older_equal_length_', kind];
+    end
+end
 end
 
 
 function series = selectDwiSeries(series, subjectPrefix)
-mainIndices = find(strcmp({series.kind}, 'dwi_main'));
-b0Indices = find(strcmp({series.kind}, 'dwi_b0'));
+hasMain = any(strcmp({series.kind}, 'dwi_main'));
+hasB0 = any(strcmp({series.kind}, 'dwi_b0'));
 
-assert(numel(mainIndices) <= 1, ...
-    '%s has multiple main DWI series requiring manual resolution: %s', ...
-    subjectPrefix, strjoin({series(mainIndices).path}, ' | '));
-assert(numel(b0Indices) <= 1, ...
-    '%s has multiple DWI B0 AP series requiring manual resolution: %s', ...
-    subjectPrefix, strjoin({series(b0Indices).path}, ' | '));
-
-if ~isempty(mainIndices)
-    series(mainIndices).selected = true;
-    series(mainIndices).decision = 'keep_unique_main_dwi';
+if hasMain
+    series = selectLongestLatestSeries(series, 'dwi_main', subjectPrefix);
 end
-if ~isempty(b0Indices)
-    assert(~isempty(mainIndices), ...
+if hasB0
+    assert(hasMain, ...
         '%s has a DWI B0 AP series but no main DWI.', subjectPrefix);
-    series(b0Indices).selected = true;
-    series(b0Indices).decision = 'keep_unique_dwi_b0';
-elseif ~isempty(mainIndices)
+    series = selectLongestLatestSeries(series, 'dwi_b0', subjectPrefix);
+elseif hasMain
     warning('%s has main DWI but no DWI B0 AP fieldmap.', subjectPrefix);
 end
 end
@@ -866,18 +869,57 @@ for task = reshape(keptTasks, 1, [])
     for index = 1:numel(csvFiles)
         matches(index) = strcmp(classifyPsychTask(csvFiles(index).name), task);
     end
-    assert(sum(matches) <= 1, ...
-        '%s has multiple event CSV files for task %s.', subjectPrefix, task);
     if ~any(matches)
         warning('%s has no event CSV file for task %s.', subjectPrefix, task);
         continue;
     end
-    csvFile = csvFiles(find(matches, 1));
+    csvFile = chooseLatestEventCsv(csvFiles(matches), subjectPrefix, task);
     events = buildEventsTable(fullfile(csvFile.folder, csvFile.name), task);
     outputPath = fullfile(bidsSubjectDir, 'func', ...
         sprintf('%s_task-%s_events.tsv', subjectPrefix, task));
     writetable(events, outputPath, 'FileType', 'text', 'Delimiter', '\t');
 end
+end
+
+
+function csvFile = chooseLatestEventCsv(csvFiles, subjectPrefix, task)
+%CHOOSELATESTEVENTCSV Select the latest timestamp encoded in the filename.
+
+if isscalar(csvFiles)
+    csvFile = csvFiles;
+    return;
+end
+
+timeKeys = nan(numel(csvFiles), 1);
+for index = 1:numel(csvFiles)
+    timeKeys(index) = eventFileTimeKey(csvFiles(index).name);
+end
+assert(all(isfinite(timeKeys)), ...
+    ['%s has multiple event CSV files for task %s, but at least one ', ...
+     'filename has no recognized timestamp.'], subjectPrefix, task);
+
+latest = find(timeKeys == max(timeKeys));
+assert(isscalar(latest), ...
+    '%s has event CSV files with the same latest timestamp for task %s.', ...
+    subjectPrefix, task);
+csvFile = csvFiles(latest);
+fprintf('%s task %s: selected latest event file %s\n', ...
+    subjectPrefix, task, csvFile.name);
+end
+
+
+function key = eventFileTimeKey(fileName)
+token = regexp(fileName, ...
+    '(\d{4}-\d{2}-\d{2})_(\d{2})h(\d{2})\.(\d{2})\.(\d{3})', ...
+    'tokens', 'once');
+if isempty(token)
+    key = NaN;
+    return;
+end
+
+timestamp = sprintf('%s %s:%s:%s.%s', token{:});
+value = datetime(timestamp, 'InputFormat', 'yyyy-MM-dd HH:mm:ss.SSS');
+key = posixtime(value);
 end
 
 
