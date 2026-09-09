@@ -53,6 +53,11 @@ with the most DICOM files and then the latest acquisition time. When multiple
 event CSV files match one retained task, the timestamp in the filename selects
 the latest file.
 
+DWI B0 selection is restricted to the source scan containing the retained main
+DWI. Conversion stops if that scan has no DWI B0 series. This rule governs the
+DWI B0 `IntendedFor` link to DWI and does not change functional fieldmap links
+to BOLD.
+
 Run a validated subject list from MATLAB:
 
 ```matlab

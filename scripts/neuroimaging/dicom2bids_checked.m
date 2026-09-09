@@ -364,10 +364,12 @@ end
 end
 
 
-function series = selectLongestLatestSeries(series, kind, subjectPrefix)
+function series = selectLongestLatestSeries(series, kind, subjectPrefix, indices)
 %SELECTLONGESTLATESTSERIES Prefer file count, then acquisition time.
 
-indices = find(strcmp({series.kind}, kind));
+if nargin < 4
+    indices = find(strcmp({series.kind}, kind));
+end
 if isempty(indices)
     return;
 end
@@ -390,19 +392,30 @@ end
 
 
 function series = selectDwiSeries(series, subjectPrefix)
-hasMain = any(strcmp({series.kind}, 'dwi_main'));
-hasB0 = any(strcmp({series.kind}, 'dwi_b0'));
+mainMask = strcmp({series.kind}, 'dwi_main');
+b0Mask = strcmp({series.kind}, 'dwi_b0');
 
-if hasMain
-    series = selectLongestLatestSeries(series, 'dwi_main', subjectPrefix);
-end
-if hasB0
-    assert(hasMain, ...
+if ~any(mainMask)
+    assert(~any(b0Mask), ...
         '%s has a DWI B0 AP series but no main DWI.', subjectPrefix);
-    series = selectLongestLatestSeries(series, 'dwi_b0', subjectPrefix);
-elseif hasMain
-    warning('%s has main DWI but no DWI B0 AP fieldmap.', subjectPrefix);
+    return;
 end
+
+series = selectLongestLatestSeries(series, 'dwi_main', subjectPrefix);
+mainIndex = find(mainMask & [series.selected], 1);
+
+sameScanMask = b0Mask & ...
+    [series.scanIndex] == series(mainIndex).scanIndex;
+assert(any(sameScanMask), ...
+    '%s selected main DWI has no DWI B0 AP series in the same scan: %s', ...
+    subjectPrefix, series(mainIndex).scanRelative);
+
+otherScanB0 = find(b0Mask & ~sameScanMask);
+for index = reshape(otherScanB0, 1, [])
+    series(index).decision = 'drop_dwi_b0_from_other_scan';
+end
+series = selectLongestLatestSeries( ...
+    series, 'dwi_b0', subjectPrefix, find(sameScanMask));
 end
 
 

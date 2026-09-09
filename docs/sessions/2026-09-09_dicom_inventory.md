@@ -48,8 +48,10 @@ JSONL 默认写入 `outputs/logs/neuroimaging/series_folder_inventory/`，CSV �
   `B0FieldIdentifier`/`B0FieldSource`。
 - T1 仅接受唯一的 Prescan Normalize MPRAGE；多个或缺少该重建时终止。
 - 主 DWI 使用精确目录名识别；ADC、FA、COLFA、TENSOR、TRACEW 等派生序列
-  显式忽略。重复主 DWI、DWI B0 和 T2 均先选择 DICOM 文件数最多者，数量
-  相同时选择采集时间最晚者。
+  显式忽略。重复主 DWI 和 T2 均先选择 DICOM 文件数最多者，数量相同时选择
+  采集时间最晚者。DWI B0 只允许从最终主 DWI 所在的同一个 scan 中选择，再按
+  文件数和采集时间取舍；该 scan 中没有 DWI B0 时终止转换。这里约束的是 DWI
+  B0 JSON 指向主 DWI 的 `IntendedFor`，不改变 functional fmap 指向 BOLD 的规则。
 - 同一任务存在多个行为 CSV 时，解析文件名中的日期和时间到毫秒，并选择
   时间最晚者；无法解析时间或最晚时间并列时终止。
 - 批处理入口在转换前拒绝重复源目录和映射到同一 BIDS 标签的多个源目录。
