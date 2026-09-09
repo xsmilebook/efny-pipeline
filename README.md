@@ -1,13 +1,13 @@
 # MRI series-folder inventory
 
-`export_series_folders.py` inventories the folder structure under a root whose immediate children are subject folders. It performs no DICOM/BIDS classification and does not read DICOM headers.
+`export_series_folders.py` lists only the sequence folders visible directly inside each scanner Study directory (`subject/MRIdata/*/*/sequence_folder`). It performs no file inspection, DICOM reading, or BIDS inference.
 
 It writes two complementary files:
 
-- `folder_inventory.jsonl`: primary GPT input; one complete JSON object per subject.
-- `series_folders.csv`: one row per file-bearing folder under `MRIdata`, for spreadsheet QA.
+- `series_folders.jsonl`: primary GPT input; one complete JSON object per subject.
+- `series_folders.csv`: one row per sequence folder, for spreadsheet QA.
 
-The default output omits original subject folder names and intermediate paths because scanner export folders can contain personal names. Intermediate MRI containers are represented as `scan_01`, `scan_02`, and so on.
+The output omits original subject folder names and intermediate paths because scanner export folders can contain personal names. Study directories are represented as `scan_01`, `scan_02`, and so on.
 
 ## Run
 
@@ -17,24 +17,21 @@ python .\scripts\neuroimaging\export_series_folders.py "Z:\xuhaoshu\20260909_bp_
 
 Outputs are written to:
 
-- `outputs/logs/neuroimaging/series_folder_inventory/folder_inventory.jsonl`
+- `outputs/logs/neuroimaging/series_folder_inventory/series_folders.jsonl`
 - `outputs/tables/neuroimaging/series_folder_inventory/series_folders.csv`
-
-For internal traceability only, add `--include-source-paths`. Review that output before sharing it because paths can contain identifying information.
 
 ## Output meaning
 
 Each JSONL subject object contains:
 
 - `subject_id`: compact ID parsed from the source folder, such as `THU_482`.
-- `direct_subfolders`: folders directly under the subject, including descendant folder/file counts and extension counts.
-- `scan_groups`: anonymized groups of MRI series folders that share the same source parent.
-- `series_folder`, `file_count`, and `extensions`: literal folder facts used for later sequence and conflict analysis.
+- `scan_groups`: anonymized scanner Study directories.
+- `sequence_folders`: the literal folder names visible at the level shown in the scanner export.
 
-The inventory deliberately does not decide whether a folder is raw, derived, repeated, interrupted, or BIDS-compatible. Those decisions should be made in a separate step using the folder facts, protocol documentation, and—when needed—DICOM headers or dcm2niix JSON sidecars.
+The inventory deliberately does not decide whether a folder is raw, derived, repeated, interrupted, or BIDS-compatible.
 
 ## Suggested GPT prompt
 
-Upload `folder_inventory.jsonl` and ask:
+Upload `series_folders.jsonl` and ask:
 
-> This file is a folder-level MRI inventory with one JSON object per subject. First summarize, without assuming BIDS correctness, which series folders each subject has. Compare subjects with similar acquisition patterns and flag only observable differences: empty MRIdata, different scan-group counts, missing or additional folder names, repeated base names, and unusually small file counts. Separate literal observations from hypotheses. Do not infer acquisition parameters that are absent from this inventory. Then list which cases require DICOM-header or dcm2niix JSON inspection before DICOM2BIDS mapping.
+> This file lists the sequence-folder names under each subject's scanner Study directory. Summarize which sequences each subject has, group obvious folder-name families such as localizer, fieldmap/reverse-PE, BOLD rest/task, diffusion, T1 and T2, and compare missing, additional, or repeated sequence-folder names. Separate literal observations from hypotheses and do not infer acquisition parameters absent from folder names.
