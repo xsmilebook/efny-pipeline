@@ -20,3 +20,8 @@ dcm2niix、NIfTI、BIDS、原始数据、被试清单路径及并行数。被试
 删除独立的 `bids_subject_label.m`，将 ID 解析直接放入单被试转换函数。原始目录
 `THU_YYYYMMDD_ID_姓名...` 转为 `sub-THUYYYYMMDDXXXX`：三位 ID 补一个前导零，
 四位 ID 保持不变，数字 ID 后的姓名及其他字符串不写入 BIDS。
+
+修正辅助目录导致被试提前失败的问题。`inspectSeries` 现在先按目录名分类，
+`LOCALIZER*`、`PHOENIXZIPREPORT*`、DWI 派生目录以及 FM、PM、PR、NBACK_V 等
+不支持序列在读取 DICOM 前直接跳过。只有实际参与 BIDS 分配的序列才要求存在
+DICOM 文件；Prescan Normalize 私有字段也只为 T1 读取。

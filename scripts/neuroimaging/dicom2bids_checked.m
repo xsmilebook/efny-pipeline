@@ -173,20 +173,28 @@ for scanIndex = 1:numel(scanGroups)
     for sequenceIndex = 1:numel(sequenceDirs)
         sequencePath = fullfile(sequenceDirs(sequenceIndex).folder, ...
             sequenceDirs(sequenceIndex).name);
-        dicomFiles = listDicomFiles(sequencePath);
-        assert(~isempty(dicomFiles), ...
-            'Recognized series folder has no DICOM files: %s', sequencePath);
-        header = dicominfo(dicomFiles{1});
 
         record = seriesTemplate();
         record.scanIndex = scanIndex;
         record.name = sequenceDirs(sequenceIndex).name;
         record.path = sequencePath;
+        record = classifySeries(record);
+        if strcmp(record.kind, 'ignore') || ...
+                strcmp(record.kind, 'dwi_derived')
+            continue;
+        end
+
+        dicomFiles = listDicomFiles(sequencePath);
+        assert(~isempty(dicomFiles), ...
+            'Recognized series folder has no DICOM files: %s', sequencePath);
+        header = dicominfo(dicomFiles{1});
+
         record.fileCount = numel(dicomFiles);
         record.seriesNumber = getSeriesNumber(header, record.name);
         record.acquisitionKey = getAcquisitionKey(header, record.seriesNumber);
-        record.prescanNormalized = hasPrescanNormalize(header);
-        record = classifySeries(record);
+        if strcmp(record.kind, 't1')
+            record.prescanNormalized = hasPrescanNormalize(header);
+        end
         series(end + 1, 1) = record; %#ok<AGROW>
     end
 end
