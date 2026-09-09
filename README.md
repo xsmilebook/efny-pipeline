@@ -62,16 +62,15 @@ The converter creates only BIDS modality directories that receive selected
 data; it does not emit empty modality directories, selection statistics, or
 event-selection console messages.
 
-Run a validated subject list from MATLAB:
+The batch entry point uses the project-specific paths and worker count written
+at the top of the script. Run it from MATLAB without arguments:
 
 ```matlab
 addpath('D:\projects\efny-pipeline\scripts\neuroimaging');
-run_dicom2bids_checked( ...
-    'D:\BIDS_transfer\raw\sublist.txt', ...
-    'D:\software\MRIcroGL_windows\MRIcroGL\Resources\dcm2niix.exe', ...
-    'D:\BIDS_transfer\NIFTI', ...
-    'D:\BIDS_transfer\BIDS', ...
-    'D:\Raw_trans');
+run_dicom2bids_checked
 ```
+
+Subjects run in parallel with errors isolated per subject. A failed subject
+emits a warning while the remaining subjects continue.
 
 The conversion does not use the inventory CSV as input.

@@ -1,42 +1,22 @@
-function run_dicom2bids_checked(sublistFile, dcm2niix, ...
-    niftiFolder, bidsFolder, rawFolder)
-%RUN_DICOM2BIDS_CHECKED Convert a validated subject list to one-session BIDS.
+clear
+clc
 
-sublist = readcell(sublistFile, 'Delimiter', '');
-sublist = string(sublist(:));
-sublist = strip(sublist);
-sublist = sublist(~ismissing(sublist) & strlength(sublist) > 0);
+addpath('D:\projects\efny-pipeline\scripts\neuroimaging');
 
-if numel(unique(sublist)) ~= numel(sublist)
-    duplicates = unique(sublist(countEach(sublist) > 1));
-    error('The subject list contains duplicate source-folder entries: %s', ...
-        strjoin(duplicates, ', '));
-end
+dcm2niix = 'D:\software\MRIcroGL_windows\MRIcroGL\Resources\dcm2niix.exe';
+niftiFolder = 'D:\BIDS_transfer\NIFTI';
+bidsFolder = 'D:\BIDS_transfer\BIDS';
+rawFolder = 'D:\Raw_trans';
+sublist = readcell('D:\BIDS_transfer\raw\sublist.txt', 'Delimiter', '');
+workerCount = 4;
 
-labels = strings(size(sublist));
-for index = 1:numel(sublist)
-    labels(index) = bids_subject_label(sublist(index));
-end
-if numel(unique(labels)) ~= numel(labels)
-    [uniqueLabels, ~, group] = unique(labels);
-    counts = accumarray(group, 1);
-    duplicateLabels = uniqueLabels(counts > 1);
-    error('Multiple source folders map to the same BIDS subject label: %s', ...
-        char(strjoin(duplicateLabels, ', ')));
-end
-
-for index = 1:numel(sublist)
-    sourceFolder = char(sublist(index));
-    dicom2bids_checked(sourceFolder, dcm2niix, ...
-        niftiFolder, bidsFolder, rawFolder);
-end
-end
-
-
-function counts = countEach(values)
-%COUNTEACH Return the frequency of each value at its original positions.
-
-[~, ~, group] = unique(values);
-frequency = accumarray(group, 1);
-counts = frequency(group);
+parfor (index = 1:numel(sublist), workerCount)
+    sourceFolder = sublist{index};
+    try
+        dicom2bids_checked(sourceFolder, dcm2niix, ...
+            niftiFolder, bidsFolder, rawFolder);
+    catch exception
+        warning('DICOM2BIDS:SubjectFailed', '%s failed: %s', ...
+            char(string(sourceFolder)), exception.message);
+    end
 end

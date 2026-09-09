@@ -11,3 +11,8 @@ DWI/B0 配对、BIDS 目标唯一性和转换后 fieldmap 参数检查。这些�
 使用 THU_604 的真实 fieldmap DICOM 进行冒烟测试：较短 AP 被排除，完整 AP/PA
 成功转换为两个 fmap NIfTI 和 JSON；未生成 manifest，也未生成空的 func、anat、
 dwi 目录。
+
+批处理入口 `run_dicom2bids_checked.m` 改为无参数 MATLAB 脚本，在文件顶部固定
+dcm2niix、NIfTI、BIDS、原始数据、被试清单路径及并行数。被试级 `parfor` 上限
+为 4；每个被试使用独立 `try/catch`，单个被试失败仅发出 warning，不中断其他
+被试。原有清单去空、重复源目录和重复 BIDS 标签预检查均已删除。
