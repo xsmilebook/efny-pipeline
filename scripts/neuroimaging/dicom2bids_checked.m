@@ -6,8 +6,12 @@ function dicom2bids_checked(sourceFolderName, dcm2niix, ...
 % identity is retained internally for rescan selection and fieldmap linkage.
 
 sourceFolderName = char(string(sourceFolderName));
-subjectLabel = bids_subject_label(sourceFolderName);
-subjectPrefix = ['sub-', subjectLabel];
+subjectParts = regexpi(sourceFolderName, ...
+    '^THU[_-](\d{8})[_-](\d{3,4})(?:[_-].*)?$', 'tokens', 'once');
+assert(~isempty(subjectParts), ...
+    'Unexpected subject folder name: %s', sourceFolderName);
+subjectPrefix = sprintf('sub-THU%s%04d', ...
+    subjectParts{1}, str2double(subjectParts{2}));
 
 subjectRawDir = fullfile(rawFolder, sourceFolderName);
 dicomRoot = fullfile(subjectRawDir, 'MRIdata');

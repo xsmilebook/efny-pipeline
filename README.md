@@ -62,6 +62,10 @@ The converter creates only BIDS modality directories that receive selected
 data; it does not emit empty modality directories, selection statistics, or
 event-selection console messages.
 
+The source folder name `THU_YYYYMMDD_ID_*` is converted directly to
+`sub-THUYYYYMMDDXXXX`; three-digit IDs receive a leading zero, four-digit IDs
+are unchanged, and all name text after the numeric ID is excluded.
+
 The batch entry point uses the project-specific paths and worker count written
 at the top of the script. Run it from MATLAB without arguments:
 

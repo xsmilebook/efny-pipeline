@@ -30,9 +30,9 @@ JSONL 默认写入 `outputs/logs/neuroimaging/series_folder_inventory/`，CSV �
 
 ## 新版 DICOM2BIDS 转换
 
-新增 `scripts/neuroimaging/dicom2bids_checked.m`、
-`run_dicom2bids_checked.m` 和 `bids_subject_label.m`，不修改 `docs/ref/` 中的
-参考脚本。新版转换仍将一个被试的所有原始 scan 合并为一个 BIDS session，
+新增 `scripts/neuroimaging/dicom2bids_checked.m` 和
+`run_dicom2bids_checked.m`；被试标签解析已并入主转换函数，不修改 `docs/ref/`
+中的参考脚本。新版转换仍将一个被试的所有原始 scan 合并为一个 BIDS session，
 但在内部重新递归识别直接包含序列目录的 scan 容器，并在复制到 BIDS 前完成
 序列取舍。
 

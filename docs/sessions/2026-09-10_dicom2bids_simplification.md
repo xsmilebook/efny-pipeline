@@ -16,3 +16,7 @@ dwi 目录。
 dcm2niix、NIfTI、BIDS、原始数据、被试清单路径及并行数。被试级 `parfor` 上限
 为 4；每个被试使用独立 `try/catch`，单个被试失败仅发出 warning，不中断其他
 被试。原有清单去空、重复源目录和重复 BIDS 标签预检查均已删除。
+
+删除独立的 `bids_subject_label.m`，将 ID 解析直接放入单被试转换函数。原始目录
+`THU_YYYYMMDD_ID_姓名...` 转为 `sub-THUYYYYMMDDXXXX`：三位 ID 补一个前导零，
+四位 ID 保持不变，数字 ID 后的姓名及其他字符串不写入 BIDS。
