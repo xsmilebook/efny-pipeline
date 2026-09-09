@@ -1,4 +1,4 @@
-function manifest = dicom2bids_checked(sourceFolderName, dcm2niix, ...
+function dicom2bids_checked(sourceFolderName, dcm2niix, ...
     niftiFolder, bidsFolder, rawFolder)
 %DICOM2BIDS_CHECKED Convert one participant after explicit series selection.
 %
@@ -32,7 +32,6 @@ assert(~isfolder(bidsSubjectDir), ...
     'BIDS subject output already exists: %s', bidsSubjectDir);
 
 mkdir(niftiSubjectDir);
-manifest = writeManifest(series, niftiSubjectDir);
 
 selectedIndices = find([series.selected]);
 for index = reshape(selectedIndices, 1, [])
@@ -177,7 +176,6 @@ for scanIndex = 1:numel(scanGroups)
 
         record = seriesTemplate();
         record.scanIndex = scanIndex;
-        record.scanRelative = scanGroups(scanIndex).relativePath;
         record.name = sequenceDirs(sequenceIndex).name;
         record.path = sequencePath;
         record.fileCount = numel(dicomFiles);
@@ -194,7 +192,6 @@ end
 function record = seriesTemplate()
 record = struct( ...
     'scanIndex', 0, ...
-    'scanRelative', '', ...
     'name', '', ...
     'path', '', ...
     'fileCount', 0, ...
@@ -208,7 +205,6 @@ record = struct( ...
     'taskMarkedFmap', false, ...
     'prescanNormalized', false, ...
     'selected', false, ...
-    'decision', 'ignore_unrecognized', ...
     'fmapRun', NaN, ...
     'bidsImageRelative', '', ...
     'convertedImage', '', ...
@@ -231,12 +227,10 @@ if ~isempty(restToken)
     record.restRun = str2double(restToken{1});
     record.logicalKey = sprintf('rest_%d', record.restRun);
     record.taskName = 'rest';
-    record.decision = 'pending_bold_selection';
 elseif ~isempty(taskToken)
     record.kind = 'bold';
     record.taskName = lower(taskToken{1});
     record.logicalKey = record.taskName;
-    record.decision = 'pending_bold_selection';
 elseif ~isempty(regexp(name, '^EP2D_.*SE_2MM.*_[0-9]+$', 'once'))
     record.kind = 'fmap';
     record.taskMarkedFmap = contains(name, '_TASK');
@@ -247,30 +241,19 @@ elseif ~isempty(regexp(name, '^EP2D_.*SE_2MM.*_[0-9]+$', 'once'))
     else
         error('Cannot determine fieldmap direction: %s', record.path);
     end
-    record.decision = 'pending_fmap_pairing';
 elseif ~isempty(regexp(name, ...
         '^SMS.*_DIFF_CMR130_B0_AP_[0-9]+$', 'once'))
     record.kind = 'dwi_b0';
-    record.decision = 'pending_dwi_selection';
 elseif ~isempty(regexp(name, ...
         '^SMS.*_DIFF_CMR130_PA_[0-9]+$', 'once'))
     record.kind = 'dwi_main';
-    record.decision = 'pending_dwi_selection';
 elseif contains(name, '_DIFF_') && any(contains(name, ...
         {'_ADC_', '_FA_', '_COLFA_', '_TENSOR_', '_TRACEW_'}))
     record.kind = 'dwi_derived';
-    record.decision = 'ignore_derived_dwi';
 elseif ~isempty(regexp(name, '^T1_MPRAGE.*_[0-9]+$', 'once'))
     record.kind = 't1';
-    record.decision = 'pending_t1_selection';
 elseif ~isempty(regexp(name, '^T2_SPC.*_[0-9]+$', 'once'))
     record.kind = 't2';
-    record.decision = 'pending_t2_selection';
-elseif startsWith(name, 'LOCALIZER') || startsWith(name, 'PHOENIXZIPREPORT')
-    record.decision = 'ignore_auxiliary_series';
-else
-    % This explicitly excludes FM, PM, PR, NBACK_V, and unsupported T1/T2.
-    record.decision = 'ignore_unsupported_series';
 end
 end
 
@@ -296,29 +279,18 @@ for key = reshape(logicalKeys, 1, [])
 
     if isRest
         complete = [series(indices).fileCount] == 180;
-        for index = reshape(indices(~complete), 1, [])
-            series(index).decision = 'drop_incomplete_rest_expected_180';
-        end
         assert(any(complete), ...
             '%s has no complete 180-volume candidate for %s.', ...
             subjectPrefix, key);
     else
         maximumFrames = max([series(indices).fileCount]);
         complete = [series(indices).fileCount] == maximumFrames;
-        for index = reshape(indices(~complete), 1, [])
-            series(index).decision = 'drop_shorter_task_rescan';
-        end
     end
 
     completeIndices = indices(complete);
     chosen = chooseLatestSeries(series, completeIndices, ...
         sprintf('%s %s', subjectPrefix, key));
     series(chosen).selected = true;
-    series(chosen).decision = 'keep_complete_latest_bold';
-
-    for index = reshape(setdiff(completeIndices, chosen), 1, [])
-        series(index).decision = 'drop_older_complete_bold_rescan';
-    end
 end
 end
 
@@ -338,10 +310,6 @@ assert(isscalar(normalized), ...
     subjectPrefix, strjoin({series(normalized).path}, ' | '));
 
 series(normalized).selected = true;
-series(normalized).decision = 'keep_unique_prescan_normalized_t1';
-for index = reshape(setdiff(t1Indices, normalized), 1, [])
-    series(index).decision = 'drop_non_prescan_normalized_t1';
-end
 end
 
 
@@ -360,15 +328,6 @@ longest = indices([series(indices).fileCount] == maximumFiles);
 chosen = chooseLatestSeries(series, longest, ...
     sprintf('%s %s', subjectPrefix, kind));
 series(chosen).selected = true;
-series(chosen).decision = ['keep_longest_latest_', kind];
-
-for index = reshape(setdiff(indices, chosen), 1, [])
-    if series(index).fileCount < maximumFiles
-        series(index).decision = ['drop_shorter_', kind];
-    else
-        series(index).decision = ['drop_older_equal_length_', kind];
-    end
-end
 end
 
 
@@ -389,12 +348,7 @@ sameScanMask = b0Mask & ...
     [series.scanIndex] == series(mainIndex).scanIndex;
 assert(any(sameScanMask), ...
     '%s selected main DWI has no DWI B0 AP series in the same scan: %s', ...
-    subjectPrefix, series(mainIndex).scanRelative);
-
-otherScanB0 = find(b0Mask & ~sameScanMask);
-for index = reshape(otherScanB0, 1, [])
-    series(index).decision = 'drop_dwi_b0_from_other_scan';
-end
+    subjectPrefix, series(mainIndex).path);
 series = selectLongestLatestSeries( ...
     series, 'dwi_b0', subjectPrefix, find(sameScanMask));
 end
@@ -421,9 +375,6 @@ for scanIndex = 1:numel(scanGroups)
 
     maximumFiles = max([series(indices).fileCount]);
     complete = [series(indices).fileCount] == maximumFiles;
-    for index = reshape(indices(~complete), 1, [])
-        series(index).decision = 'drop_incomplete_fmap_shorter_file_count';
-    end
     completeIndices = indices(complete);
 
     apIndices = completeIndices(strcmp({series(completeIndices).direction}, 'AP'));
@@ -462,7 +413,6 @@ for run = 1:numel(pairs)
     selected = [pairs(run).apSeriesIndex, pairs(run).paSeriesIndex];
     for index = selected
         series(index).selected = true;
-        series(index).decision = 'keep_complete_paired_fmap';
         series(index).fmapRun = run;
     end
 end
@@ -783,28 +733,6 @@ if ~isfolder(parent)
 end
 [success, message] = copyfile(source, destination);
 assert(success, 'Failed to copy %s to %s: %s', source, destination, message);
-end
-
-
-function manifest = writeManifest(series, niftiSubjectDir)
-manifest = table( ...
-    [series.scanIndex]', ...
-    string({series.scanRelative})', ...
-    string({series.name})', ...
-    string({series.kind})', ...
-    [series.fileCount]', ...
-    [series.seriesNumber]', ...
-    [series.acquisitionKey]', ...
-    [series.prescanNormalized]', ...
-    [series.selected]', ...
-    string({series.decision})', ...
-    string({series.bidsImageRelative})', ...
-    'VariableNames', {'source_scan_index', 'source_scan_path', ...
-    'series_folder', 'series_kind', 'dicom_file_count', 'series_number', ...
-    'acquisition_key', 'prescan_normalized', 'selected', ...
-    'decision', 'bids_image'});
-writetable(manifest, fullfile(niftiSubjectDir, ...
-    'conversion_manifest.tsv'), 'FileType', 'text', 'Delimiter', '\t');
 end
 
 

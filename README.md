@@ -58,9 +58,9 @@ DWI. Conversion stops if that scan has no DWI B0 series. This rule governs the
 DWI B0 `IntendedFor` link to DWI and does not change functional fieldmap links
 to BOLD.
 
-The converter writes one selection manifest and creates only BIDS modality
-directories that receive selected data; it does not emit empty modality
-directories or event-selection console messages.
+The converter creates only BIDS modality directories that receive selected
+data; it does not emit empty modality directories, selection statistics, or
+event-selection console messages.
 
 Run a validated subject list from MATLAB:
 
@@ -74,6 +74,4 @@ run_dicom2bids_checked( ...
     'D:\Raw_trans');
 ```
 
-The conversion does not use the inventory CSV as input. A per-series
-`conversion_manifest.tsv` is written under the participant's intermediate
-NIfTI directory.
+The conversion does not use the inventory CSV as input.

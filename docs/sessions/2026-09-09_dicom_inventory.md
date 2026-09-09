@@ -55,11 +55,10 @@ JSONL 默认写入 `outputs/logs/neuroimaging/series_folder_inventory/`，CSV �
 - 同一任务存在多个行为 CSV 时，解析文件名中的日期和时间到毫秒，并选择
   时间最晚者；无法解析时间或最晚时间并列时终止。
 - 批处理入口在转换前拒绝重复源目录和映射到同一 BIDS 标签的多个源目录。
-- 转换不依赖文件夹清单 CSV；每个被试在 NIfTI 中间目录写出
-  `conversion_manifest.tsv`。
-- 精简转换实现：manifest 只写一次，BIDS 只创建实际有数据的模态目录，不再
-  输出行为 CSV 选择提示；删除递归遍历不可能触发的重复路径检查和已由赋值
-  循环保证的内部 run 检查，并将事件类型赋值改为等价的向量化实现。
+- 转换不依赖文件夹清单 CSV，也不另行输出序列选择统计表。
+- 精简转换实现：BIDS 只创建实际有数据的模态目录，不再输出行为 CSV 选择提示；
+  删除仅服务于 manifest 的决策字段、递归遍历不可能触发的重复路径检查和已由
+  赋值循环保证的内部 run 检查，并将事件类型赋值改为等价的向量化实现。
 
 转换后的每对 fmap 还会核对 NIfTI 维度、相反的
 `PhaseEncodingDirection`，以及两方向共有的 `EchoTime`、`RepetitionTime`
