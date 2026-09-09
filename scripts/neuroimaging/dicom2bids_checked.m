@@ -14,7 +14,6 @@ dicomRoot = fullfile(subjectRawDir, 'MRIdata');
 psychDir = fullfile(subjectRawDir, 'PSYCH');
 
 assert(isfolder(dicomRoot), 'Missing MRIdata folder: %s', dicomRoot);
-assert(isfile(dcm2niix), 'Missing dcm2niix executable: %s', dcm2niix);
 
 scanGroups = discoverScanGroups(dicomRoot);
 assert(~isempty(scanGroups), ...
@@ -22,7 +21,7 @@ assert(~isempty(scanGroups), ...
 
 series = inspectSeries(scanGroups);
 [series, fmapPairs] = selectSeries(series, scanGroups, subjectPrefix);
-series = assignBidsDestinations(series, fmapPairs, subjectPrefix);
+series = assignBidsDestinations(series, subjectPrefix);
 validateUniqueDestinations(series);
 
 niftiSubjectDir = fullfile(niftiFolder, subjectPrefix);
@@ -33,7 +32,7 @@ assert(~isfolder(bidsSubjectDir), ...
     'BIDS subject output already exists: %s', bidsSubjectDir);
 
 mkdir(niftiSubjectDir);
-writeManifest(series, niftiSubjectDir);
+manifest = writeManifest(series, niftiSubjectDir);
 
 selectedIndices = find([series.selected]);
 for index = reshape(selectedIndices, 1, [])
@@ -57,12 +56,8 @@ end
 
 validateConvertedFieldmapPairs(series, fmapPairs);
 
-for folder = {'func', 'fmap', 'dwi', 'anat'}
-    mkdir(fullfile(bidsSubjectDir, folder{1}));
-end
-
 for index = reshape(selectedIndices, 1, [])
-    metadata = readJson(series(index).convertedJson);
+    metadata = jsondecode(fileread(series(index).convertedJson));
 
     switch series(index).kind
         case 'bold'
@@ -116,7 +111,6 @@ for index = reshape(selectedIndices, 1, [])
 end
 
 writeEvents(psychDir, bidsSubjectDir, subjectPrefix, series);
-manifest = writeManifest(series, niftiSubjectDir);
 end
 
 
@@ -127,10 +121,8 @@ template = struct('path', '', 'relativePath', '', 'sequenceDirs', []);
 scanGroups = repmat(template, 0, 1);
 scanGroups = walkForScanGroups(dicomRoot, dicomRoot, scanGroups);
 
-if ~isempty(scanGroups)
-    [~, order] = sort(lower(string({scanGroups.relativePath})));
-    scanGroups = scanGroups(order);
-end
+[~, order] = sort(lower(string({scanGroups.relativePath})));
+scanGroups = scanGroups(order);
 end
 
 
@@ -138,9 +130,6 @@ function scanGroups = walkForScanGroups(currentPath, dicomRoot, scanGroups)
 entries = dir(currentPath);
 entries = entries([entries.isdir]);
 entries(ismember({entries.name}, {'.', '..'})) = [];
-if isempty(entries)
-    return;
-end
 
 [~, order] = sort(lower(string({entries.name})));
 entries = entries(order);
@@ -175,29 +164,22 @@ function series = inspectSeries(scanGroups)
 %INSPECTSERIES Read one DICOM header and count files for every source series.
 
 series = repmat(seriesTemplate(), 0, 1);
-seenPaths = strings(0, 1);
 
 for scanIndex = 1:numel(scanGroups)
     sequenceDirs = scanGroups(scanIndex).sequenceDirs;
     for sequenceIndex = 1:numel(sequenceDirs)
         sequencePath = fullfile(sequenceDirs(sequenceIndex).folder, ...
             sequenceDirs(sequenceIndex).name);
-        canonicalPath = lower(string(sequencePath));
-        assert(~ismember(canonicalPath, seenPaths), ...
-            'Duplicate source series folder detected: %s', sequencePath);
-        seenPaths(end + 1, 1) = canonicalPath; %#ok<AGROW>
-
         dicomFiles = listDicomFiles(sequencePath);
         assert(~isempty(dicomFiles), ...
             'Recognized series folder has no DICOM files: %s', sequencePath);
-        [header, firstDicom] = readFirstDicomHeader(dicomFiles);
+        header = dicominfo(dicomFiles{1});
 
         record = seriesTemplate();
         record.scanIndex = scanIndex;
         record.scanRelative = scanGroups(scanIndex).relativePath;
         record.name = sequenceDirs(sequenceIndex).name;
         record.path = sequencePath;
-        record.firstDicom = firstDicom;
         record.fileCount = numel(dicomFiles);
         record.seriesNumber = getSeriesNumber(header, record.name);
         record.acquisitionKey = getAcquisitionKey(header, record.seriesNumber);
@@ -215,7 +197,6 @@ record = struct( ...
     'scanRelative', '', ...
     'name', '', ...
     'path', '', ...
-    'firstDicom', '', ...
     'fileCount', 0, ...
     'seriesNumber', NaN, ...
     'acquisitionKey', NaN, ...
@@ -512,7 +493,7 @@ indices = indices(order);
 end
 
 
-function series = assignBidsDestinations(series, fmapPairs, subjectPrefix)
+function series = assignBidsDestinations(series, subjectPrefix)
 for index = reshape(find([series.selected]), 1, [])
     switch series(index).kind
         case 'bold'
@@ -548,8 +529,6 @@ for index = reshape(find([series.selected]), 1, [])
     end
 end
 
-assert(all([fmapPairs.run] == 1:numel(fmapPairs)), ...
-    'Internal fieldmap run assignment is inconsistent.');
 end
 
 
@@ -596,21 +575,6 @@ entries = entries(keep);
 [~, order] = sort(lower(string({entries.name})));
 entries = entries(order);
 files = fullfile({entries.folder}, {entries.name});
-end
-
-
-function [header, firstDicom] = readFirstDicomHeader(files)
-lastError = '';
-for index = 1:numel(files)
-    try
-        header = dicominfo(files{index});
-        firstDicom = files{index};
-        return;
-    catch exception
-        lastError = exception.message;
-    end
-end
-error('No readable DICOM file found. Last error: %s', lastError);
 end
 
 
@@ -704,8 +668,6 @@ end
 
 function [imagePath, jsonPath, bvecPath, bvalPath] = convertOneSeries( ...
     dcm2niix, sourcePath, conversionDir)
-assert(~isfolder(conversionDir), ...
-    'Conversion output already exists: %s', conversionDir);
 mkdir(conversionDir);
 
 command = sprintf('"%s" -f converted -i y -z y -w 2 -o "%s" "%s"', ...
@@ -743,8 +705,8 @@ function validateConvertedFieldmapPairs(series, fmapPairs)
 for pairIndex = 1:numel(fmapPairs)
     ap = series(fmapPairs(pairIndex).apSeriesIndex);
     pa = series(fmapPairs(pairIndex).paSeriesIndex);
-    apJson = readJson(ap.convertedJson);
-    paJson = readJson(pa.convertedJson);
+    apJson = jsondecode(fileread(ap.convertedJson));
+    paJson = jsondecode(fileread(pa.convertedJson));
 
     assert(isfield(apJson, 'PhaseEncodingDirection') && ...
         isfield(paJson, 'PhaseEncodingDirection'), ...
@@ -785,22 +747,12 @@ tf = strcmp(firstAxis, secondAxis) && xor(firstNegative, secondNegative);
 end
 
 
-function metadata = readJson(path)
-metadata = jsondecode(fileread(path));
-end
-
-
 function writeJson(metadata, path)
-parent = fileparts(path);
-if ~isfolder(parent)
-    mkdir(parent);
-end
 encoded = jsonencode(metadata, 'PrettyPrint', true);
 fileId = fopen(path, 'w', 'n', 'UTF-8');
 assert(fileId ~= -1, 'Cannot open JSON output: %s', path);
 cleanup = onCleanup(@() fclose(fileId));
 fprintf(fileId, '%s\n', encoded);
-clear cleanup;
 end
 
 
@@ -820,19 +772,11 @@ end
 
 
 function destination = replaceNiftiExtension(path, newExtension)
-if endsWith(path, '.nii.gz', 'IgnoreCase', true)
-    destination = [extractBefore(path, strlength(path) - 6), newExtension];
-elseif endsWith(path, '.nii', 'IgnoreCase', true)
-    destination = [extractBefore(path, strlength(path) - 3), newExtension];
-else
-    error('Unexpected NIfTI path: %s', path);
-end
-destination = char(destination);
+destination = [path(1:end - 7), newExtension];
 end
 
 
 function copyNoOverwrite(source, destination)
-assert(~isfile(destination), 'Refusing to overwrite: %s', destination);
 parent = fileparts(destination);
 if ~isfolder(parent)
     mkdir(parent);
@@ -916,8 +860,6 @@ assert(isscalar(latest), ...
     '%s has event CSV files with the same latest timestamp for task %s.', ...
     subjectPrefix, task);
 csvFile = csvFiles(latest);
-fprintf('%s task %s: selected latest event file %s\n', ...
-    subjectPrefix, task, csvFile.name);
 end
 
 
@@ -937,17 +879,12 @@ end
 
 
 function task = classifyPsychTask(fileName)
-upperName = upper(fileName);
-hits = [contains(upperName, 'SST'), contains(upperName, 'NBACK'), ...
-    contains(upperName, 'SWITCH')];
-if sum(hits) ~= 1
-    task = "";
-elseif hits(1)
-    task = "sst";
-elseif hits(2)
-    task = "nback";
+tasks = ["sst", "nback", "switch"];
+hits = contains(upper(string(fileName)), upper(tasks));
+if sum(hits) == 1
+    task = tasks(hits);
 else
-    task = "switch";
+    task = "";
 end
 end
 
@@ -970,28 +907,14 @@ events.value = psych.key_resp_corr;
 
 switch task
     case "sst"
-        for row = 1:rowCount
-            if strcmp(psych.bad{row}, 'None')
-                events.trial_type(row) = "go";
-            else
-                events.trial_type(row) = "stop";
-            end
-        end
+        events.trial_type(:) = "stop";
+        events.trial_type(strcmp(psych.bad, 'None')) = "go";
     case "nback"
-        for row = 1:rowCount
-            if contains(psych.Trial_loop_list{row}, '0back')
-                events.trial_type(row) = "0back";
-            else
-                events.trial_type(row) = "2back";
-            end
-        end
+        events.trial_type(:) = "2back";
+        events.trial_type(contains(psych.Trial_loop_list, '0back')) = "0back";
     case "switch"
-        for row = 1:rowCount
-            if contains(psych.Trial_loop_list{row}, 'nonswitch')
-                events.trial_type(row) = "nonswitch";
-            else
-                events.trial_type(row) = "switch";
-            end
-        end
+        events.trial_type(:) = "switch";
+        events.trial_type(contains( ...
+            psych.Trial_loop_list, 'nonswitch')) = "nonswitch";
 end
 end

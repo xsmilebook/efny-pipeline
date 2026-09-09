@@ -58,6 +58,10 @@ DWI. Conversion stops if that scan has no DWI B0 series. This rule governs the
 DWI B0 `IntendedFor` link to DWI and does not change functional fieldmap links
 to BOLD.
 
+The converter writes one selection manifest and creates only BIDS modality
+directories that receive selected data; it does not emit empty modality
+directories or event-selection console messages.
+
 Run a validated subject list from MATLAB:
 
 ```matlab
