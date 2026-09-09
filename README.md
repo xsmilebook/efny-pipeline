@@ -38,3 +38,28 @@ The inventory deliberately does not decide whether a folder is raw, derived, rep
 Upload `series_folders.jsonl` and ask:
 
 > This file lists the sequence-folder names under each subject's scanner Study directory. Summarize which sequences each subject has, group obvious folder-name families such as localizer, fieldmap/reverse-PE, BOLD rest/task, diffusion, T1 and T2, and compare missing, additional, or repeated sequence-folder names. Separate literal observations from hypotheses and do not infer acquisition parameters absent from folder names.
+
+## Checked DICOM to BIDS conversion
+
+`dicom2bids_checked.m` is the one-session conversion entry for one participant.
+It discovers scan containers directly below `MRIdata`, resolves supported BOLD
+rescans before conversion, keeps only a unique Prescan Normalize T1, excludes
+derived DWI folders, pairs complete AP/PA fieldmaps, and assigns fieldmap runs
+by acquisition time. It refuses unresolved duplicates and existing subject
+output directories instead of overwriting them.
+
+Run a validated subject list from MATLAB:
+
+```matlab
+addpath('D:\projects\efny-pipeline\scripts\neuroimaging');
+run_dicom2bids_checked( ...
+    'D:\BIDS_transfer\raw\sublist.txt', ...
+    'D:\software\MRIcroGL_windows\MRIcroGL\Resources\dcm2niix.exe', ...
+    'D:\BIDS_transfer\NIFTI', ...
+    'D:\BIDS_transfer\BIDS', ...
+    'D:\Raw_trans');
+```
+
+The conversion does not use the inventory CSV as input. A per-series
+`conversion_manifest.tsv` is written under the participant's intermediate
+NIfTI directory.

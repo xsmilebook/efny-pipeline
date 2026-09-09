@@ -27,3 +27,36 @@ python .\scripts\neuroimaging\export_series_folders.py "Z:\xuhaoshu\20260909_bp_
 ```
 
 JSONL 默认写入 `outputs/logs/neuroimaging/series_folder_inventory/`，CSV 默认写入 `outputs/tables/neuroimaging/series_folder_inventory/`。
+
+## 新版 DICOM2BIDS 转换
+
+新增 `scripts/neuroimaging/dicom2bids_checked.m`、
+`run_dicom2bids_checked.m` 和 `bids_subject_label.m`，不修改 `docs/ref/` 中的
+参考脚本。新版转换仍将一个被试的所有原始 scan 合并为一个 BIDS session，
+但在内部重新递归识别直接包含序列目录的 scan 容器，并在复制到 BIDS 前完成
+序列取舍。
+
+主要规则：
+
+- REST0--REST99 只保留 180 帧且采集时间最晚的一条；重复 SST、NBACK、SWITCH
+  保留被试内帧数最多、时间最晚的一条。FM、PM、PR 和 NBACK_V 不处理。
+- 每个 scan 内不能同时出现普通 fmap 和 `_TASK` fmap；较短的 fmap 视为未完成，
+  过滤后 AP/PA 数量必须平衡。所有有效配对按采集时间统一编号为
+  `run-1`、`run-2` 等，同一对 AP/PA 共用 run。
+- fmap 的 `IntendedFor` 只包含同一来源 scan 中最终保留的 BOLD，并同时写入
+  `B0FieldIdentifier`/`B0FieldSource`。
+- T1 仅接受唯一的 Prescan Normalize MPRAGE；多个或缺少该重建时终止。
+- 主 DWI 使用精确目录名识别；ADC、FA、COLFA、TENSOR、TRACEW 等派生序列
+  显式忽略。多条主 DWI 或反向 B0 暂不自动选择，而是终止并要求人工判断。
+- 批处理入口在转换前拒绝重复源目录和映射到同一 BIDS 标签的多个源目录。
+- 转换不依赖文件夹清单 CSV；每个被试在 NIfTI 中间目录写出
+  `conversion_manifest.tsv`。
+
+转换后的每对 fmap 还会核对 NIfTI 维度、相反的
+`PhaseEncodingDirection`，以及两方向共有的 `EchoTime`、`RepetitionTime`
+和 `TotalReadoutTime`。
+
+使用 `Z:\xuhaoshu\THU_604` 做了真实 DICOM 冒烟验证：74 张的
+`EP2D_SE_2MM_AP_TASK_0014` 被标记为不完整并排除；192 张的
+`AP_TASK_0015` 与 192 张的 `PA_TASK_0013` 被保留为同一个 `run-1`。
+测试产生的临时 NIfTI/BIDS 文件已清理。

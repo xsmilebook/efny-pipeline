@@ -1,0 +1,942 @@
+function manifest = dicom2bids_checked(sourceFolderName, dcm2niix, ...
+    niftiFolder, bidsFolder, rawFolder)
+%DICOM2BIDS_CHECKED Convert one participant after explicit series selection.
+%
+% All source scan containers are merged into one BIDS session. Source scan
+% identity is retained internally for rescan selection and fieldmap linkage.
+
+sourceFolderName = char(string(sourceFolderName));
+subjectLabel = bids_subject_label(sourceFolderName);
+subjectPrefix = ['sub-', subjectLabel];
+
+subjectRawDir = fullfile(rawFolder, sourceFolderName);
+dicomRoot = fullfile(subjectRawDir, 'MRIdata');
+psychDir = fullfile(subjectRawDir, 'PSYCH');
+
+assert(isfolder(dicomRoot), 'Missing MRIdata folder: %s', dicomRoot);
+assert(isfile(dcm2niix), 'Missing dcm2niix executable: %s', dcm2niix);
+
+scanGroups = discoverScanGroups(dicomRoot);
+assert(~isempty(scanGroups), ...
+    'No scan container with recognized sequence folders under %s', dicomRoot);
+
+series = inspectSeries(scanGroups);
+[series, fmapPairs] = selectSeries(series, scanGroups, subjectPrefix);
+series = assignBidsDestinations(series, fmapPairs, subjectPrefix);
+validateUniqueDestinations(series);
+
+niftiSubjectDir = fullfile(niftiFolder, subjectPrefix);
+bidsSubjectDir = fullfile(bidsFolder, subjectPrefix);
+assert(~isfolder(niftiSubjectDir), ...
+    'NIfTI subject output already exists: %s', niftiSubjectDir);
+assert(~isfolder(bidsSubjectDir), ...
+    'BIDS subject output already exists: %s', bidsSubjectDir);
+
+mkdir(niftiSubjectDir);
+writeManifest(series, niftiSubjectDir);
+
+selectedIndices = find([series.selected]);
+for index = reshape(selectedIndices, 1, [])
+    conversionDir = fullfile(niftiSubjectDir, ...
+        sprintf('scan_%03d', series(index).scanIndex), series(index).name);
+    [imagePath, jsonPath, bvecPath, bvalPath] = convertOneSeries( ...
+        dcm2niix, series(index).path, conversionDir);
+    series(index).convertedImage = imagePath;
+    series(index).convertedJson = jsonPath;
+    series(index).convertedBvec = bvecPath;
+    series(index).convertedBval = bvalPath;
+
+    if strcmp(series(index).kind, 'bold')
+        convertedVolumes = niftiVolumeCount(imagePath);
+        assert(convertedVolumes == series(index).fileCount, ...
+            ['BOLD volume mismatch for %s: %d DICOM files but %d NIfTI ', ...
+             'volumes.'], series(index).path, series(index).fileCount, ...
+             convertedVolumes);
+    end
+end
+
+validateConvertedFieldmapPairs(series, fmapPairs);
+
+for folder = {'func', 'fmap', 'dwi', 'anat'}
+    mkdir(fullfile(bidsSubjectDir, folder{1}));
+end
+
+for index = reshape(selectedIndices, 1, [])
+    metadata = readJson(series(index).convertedJson);
+
+    switch series(index).kind
+        case 'bold'
+            metadata.TaskName = series(index).taskName;
+            identifiers = fmapIdentifiersForScan( ...
+                fmapPairs, series(index).scanIndex);
+            metadata = setOrRemoveField(metadata, 'B0FieldSource', identifiers);
+
+        case 'fmap'
+            pairIndex = find([fmapPairs.run] == series(index).fmapRun, 1);
+            metadata.B0FieldIdentifier = fmapPairs(pairIndex).identifier;
+            intendedFor = boldTargetsForScan( ...
+                series, series(index).scanIndex, subjectPrefix);
+            metadata = setOrRemoveField(metadata, 'IntendedFor', intendedFor);
+
+        case 'dwi_b0'
+            dwiIndex = find(strcmp({series.kind}, 'dwi_main') & ...
+                [series.selected], 1);
+            metadata.B0FieldIdentifier = 'dwi_fmap';
+            intendedFor = {};
+            if ~isempty(dwiIndex)
+                intendedFor = {bidsUri(subjectPrefix, ...
+                    series(dwiIndex).bidsImageRelative)};
+            end
+            metadata = setOrRemoveField(metadata, 'IntendedFor', intendedFor);
+
+        case 'dwi_main'
+            b0Exists = any(strcmp({series.kind}, 'dwi_b0') & [series.selected]);
+            if b0Exists
+                metadata.B0FieldSource = 'dwi_fmap';
+            else
+                metadata = setOrRemoveField(metadata, 'B0FieldSource', {});
+            end
+    end
+
+    destinationImage = fullfile(bidsSubjectDir, ...
+        series(index).bidsImageRelative);
+    destinationJson = replaceNiftiExtension(destinationImage, '.json');
+    copyNoOverwrite(series(index).convertedImage, destinationImage);
+    writeJson(metadata, destinationJson);
+
+    if strcmp(series(index).kind, 'dwi_main')
+        assert(isfile(series(index).convertedBvec) && ...
+            isfile(series(index).convertedBval), ...
+            'Missing bvec/bval for main DWI series: %s', series(index).path);
+        copyNoOverwrite(series(index).convertedBvec, ...
+            replaceNiftiExtension(destinationImage, '.bvec'));
+        copyNoOverwrite(series(index).convertedBval, ...
+            replaceNiftiExtension(destinationImage, '.bval'));
+    end
+end
+
+writeEvents(psychDir, bidsSubjectDir, subjectPrefix, series);
+manifest = writeManifest(series, niftiSubjectDir);
+end
+
+
+function scanGroups = discoverScanGroups(dicomRoot)
+%DISCOVERSCANGROUPS Find folders that directly contain recognized series.
+
+template = struct('path', '', 'relativePath', '', 'sequenceDirs', []);
+scanGroups = repmat(template, 0, 1);
+scanGroups = walkForScanGroups(dicomRoot, dicomRoot, scanGroups);
+
+if ~isempty(scanGroups)
+    [~, order] = sort(lower(string({scanGroups.relativePath})));
+    scanGroups = scanGroups(order);
+end
+end
+
+
+function scanGroups = walkForScanGroups(currentPath, dicomRoot, scanGroups)
+entries = dir(currentPath);
+entries = entries([entries.isdir]);
+entries(ismember({entries.name}, {'.', '..'})) = [];
+if isempty(entries)
+    return;
+end
+
+[~, order] = sort(lower(string({entries.name})));
+entries = entries(order);
+isSequence = arrayfun(@(entry) isSequenceFolderName(entry.name), entries);
+
+if any(isSequence)
+    relativePath = erase(currentPath, [dicomRoot, filesep]);
+    if isempty(relativePath)
+        relativePath = '.';
+    end
+    record.path = currentPath;
+    record.relativePath = relativePath;
+    record.sequenceDirs = entries(isSequence);
+    scanGroups(end + 1, 1) = record; %#ok<AGROW>
+end
+
+for index = reshape(find(~isSequence), 1, [])
+    childPath = fullfile(entries(index).folder, entries(index).name);
+    scanGroups = walkForScanGroups(childPath, dicomRoot, scanGroups);
+end
+end
+
+
+function tf = isSequenceFolderName(name)
+tf = ~isempty(regexpi(name, ...
+    '^(EP2D_|LOCALIZER|PHOENIXZIPREPORT|SMS.*_(BOLD|DIFF)_|T1_|T2_)', ...
+    'once'));
+end
+
+
+function series = inspectSeries(scanGroups)
+%INSPECTSERIES Read one DICOM header and count files for every source series.
+
+series = repmat(seriesTemplate(), 0, 1);
+seenPaths = strings(0, 1);
+
+for scanIndex = 1:numel(scanGroups)
+    sequenceDirs = scanGroups(scanIndex).sequenceDirs;
+    for sequenceIndex = 1:numel(sequenceDirs)
+        sequencePath = fullfile(sequenceDirs(sequenceIndex).folder, ...
+            sequenceDirs(sequenceIndex).name);
+        canonicalPath = lower(string(sequencePath));
+        assert(~ismember(canonicalPath, seenPaths), ...
+            'Duplicate source series folder detected: %s', sequencePath);
+        seenPaths(end + 1, 1) = canonicalPath; %#ok<AGROW>
+
+        dicomFiles = listDicomFiles(sequencePath);
+        assert(~isempty(dicomFiles), ...
+            'Recognized series folder has no DICOM files: %s', sequencePath);
+        [header, firstDicom] = readFirstDicomHeader(dicomFiles);
+
+        record = seriesTemplate();
+        record.scanIndex = scanIndex;
+        record.scanRelative = scanGroups(scanIndex).relativePath;
+        record.name = sequenceDirs(sequenceIndex).name;
+        record.path = sequencePath;
+        record.firstDicom = firstDicom;
+        record.fileCount = numel(dicomFiles);
+        record.seriesNumber = getSeriesNumber(header, record.name);
+        record.acquisitionKey = getAcquisitionKey(header, record.seriesNumber);
+        record.prescanNormalized = hasPrescanNormalize(header);
+        record = classifySeries(record);
+        series(end + 1, 1) = record; %#ok<AGROW>
+    end
+end
+end
+
+
+function record = seriesTemplate()
+record = struct( ...
+    'scanIndex', 0, ...
+    'scanRelative', '', ...
+    'name', '', ...
+    'path', '', ...
+    'firstDicom', '', ...
+    'fileCount', 0, ...
+    'seriesNumber', NaN, ...
+    'acquisitionKey', NaN, ...
+    'kind', 'ignore', ...
+    'logicalKey', '', ...
+    'taskName', '', ...
+    'restRun', NaN, ...
+    'direction', '', ...
+    'taskMarkedFmap', false, ...
+    'prescanNormalized', false, ...
+    'selected', false, ...
+    'decision', 'ignore_unrecognized', ...
+    'fmapRun', NaN, ...
+    'bidsImageRelative', '', ...
+    'convertedImage', '', ...
+    'convertedJson', '', ...
+    'convertedBvec', '', ...
+    'convertedBval', '');
+end
+
+
+function record = classifySeries(record)
+name = upper(record.name);
+
+restToken = regexp(name, ...
+    '^SMS.*_BOLD_REST([0-9]{1,2})_[0-9]+$', 'tokens', 'once');
+taskToken = regexp(name, ...
+    '^SMS.*_BOLD_(SST|NBACK|SWITCH)_[0-9]+$', 'tokens', 'once');
+
+if ~isempty(restToken)
+    record.kind = 'bold';
+    record.restRun = str2double(restToken{1});
+    record.logicalKey = sprintf('rest_%d', record.restRun);
+    record.taskName = 'rest';
+    record.decision = 'pending_bold_selection';
+elseif ~isempty(taskToken)
+    record.kind = 'bold';
+    record.taskName = lower(taskToken{1});
+    record.logicalKey = record.taskName;
+    record.decision = 'pending_bold_selection';
+elseif ~isempty(regexp(name, '^EP2D_.*SE_2MM.*_[0-9]+$', 'once'))
+    record.kind = 'fmap';
+    record.taskMarkedFmap = contains(name, '_TASK');
+    if contains(name, '_AP')
+        record.direction = 'AP';
+    elseif contains(name, '_PA')
+        record.direction = 'PA';
+    else
+        error('Cannot determine fieldmap direction: %s', record.path);
+    end
+    record.decision = 'pending_fmap_pairing';
+elseif ~isempty(regexp(name, ...
+        '^SMS.*_DIFF_CMR130_B0_AP_[0-9]+$', 'once'))
+    record.kind = 'dwi_b0';
+    record.decision = 'pending_dwi_selection';
+elseif ~isempty(regexp(name, ...
+        '^SMS.*_DIFF_CMR130_PA_[0-9]+$', 'once'))
+    record.kind = 'dwi_main';
+    record.decision = 'pending_dwi_selection';
+elseif contains(name, '_DIFF_') && any(contains(name, ...
+        {'_ADC_', '_FA_', '_COLFA_', '_TENSOR_', '_TRACEW_'}))
+    record.kind = 'dwi_derived';
+    record.decision = 'ignore_derived_dwi';
+elseif ~isempty(regexp(name, '^T1_MPRAGE.*_[0-9]+$', 'once'))
+    record.kind = 't1';
+    record.decision = 'pending_t1_selection';
+elseif ~isempty(regexp(name, '^T2_SPC.*_[0-9]+$', 'once'))
+    record.kind = 't2';
+    record.decision = 'pending_t2_selection';
+elseif startsWith(name, 'LOCALIZER') || startsWith(name, 'PHOENIXZIPREPORT')
+    record.decision = 'ignore_auxiliary_series';
+else
+    % This explicitly excludes FM, PM, PR, NBACK_V, and unsupported T1/T2.
+    record.decision = 'ignore_unsupported_series';
+end
+end
+
+
+function [series, fmapPairs] = selectSeries(series, scanGroups, subjectPrefix)
+%SELECTSERIES Resolve BOLD/T1 duplicates and complete fieldmap pairs.
+
+series = selectBoldSeries(series, subjectPrefix);
+series = selectT1Series(series, subjectPrefix);
+series = selectSingleOptionalSeries(series, 't2', subjectPrefix);
+series = selectDwiSeries(series, subjectPrefix);
+[series, fmapPairs] = selectFieldmapPairs(series, scanGroups, subjectPrefix);
+end
+
+
+function series = selectBoldSeries(series, subjectPrefix)
+boldIndices = find(strcmp({series.kind}, 'bold'));
+logicalKeys = unique(string({series(boldIndices).logicalKey}), 'stable');
+
+for key = reshape(logicalKeys, 1, [])
+    indices = boldIndices(strcmp({series(boldIndices).logicalKey}, key));
+    isRest = startsWith(key, 'rest_');
+
+    if isRest
+        complete = [series(indices).fileCount] == 180;
+        for index = reshape(indices(~complete), 1, [])
+            series(index).decision = 'drop_incomplete_rest_expected_180';
+        end
+        assert(any(complete), ...
+            '%s has no complete 180-volume candidate for %s.', ...
+            subjectPrefix, key);
+    else
+        maximumFrames = max([series(indices).fileCount]);
+        complete = [series(indices).fileCount] == maximumFrames;
+        for index = reshape(indices(~complete), 1, [])
+            series(index).decision = 'drop_shorter_task_rescan';
+        end
+    end
+
+    completeIndices = indices(complete);
+    chosen = chooseLatestSeries(series, completeIndices, ...
+        sprintf('%s %s', subjectPrefix, key));
+    series(chosen).selected = true;
+    series(chosen).decision = 'keep_complete_latest_bold';
+
+    for index = reshape(setdiff(completeIndices, chosen), 1, [])
+        series(index).decision = 'drop_older_complete_bold_rescan';
+    end
+end
+end
+
+
+function series = selectT1Series(series, subjectPrefix)
+t1Indices = find(strcmp({series.kind}, 't1'));
+if isempty(t1Indices)
+    return;
+end
+
+normalized = t1Indices([series(t1Indices).prescanNormalized]);
+assert(~isempty(normalized), ...
+    '%s has T1 MPRAGE data but no Prescan Normalize reconstruction.', ...
+    subjectPrefix);
+assert(isscalar(normalized), ...
+    '%s has multiple Prescan Normalize T1 MPRAGE series: %s', ...
+    subjectPrefix, strjoin({series(normalized).path}, ' | '));
+
+series(normalized).selected = true;
+series(normalized).decision = 'keep_unique_prescan_normalized_t1';
+for index = reshape(setdiff(t1Indices, normalized), 1, [])
+    series(index).decision = 'drop_non_prescan_normalized_t1';
+end
+end
+
+
+function series = selectSingleOptionalSeries(series, kind, subjectPrefix)
+indices = find(strcmp({series.kind}, kind));
+if isempty(indices)
+    return;
+end
+assert(isscalar(indices), ...
+    '%s has multiple unresolved %s series: %s', subjectPrefix, kind, ...
+    strjoin({series(indices).path}, ' | '));
+series(indices).selected = true;
+series(indices).decision = ['keep_unique_', kind];
+end
+
+
+function series = selectDwiSeries(series, subjectPrefix)
+mainIndices = find(strcmp({series.kind}, 'dwi_main'));
+b0Indices = find(strcmp({series.kind}, 'dwi_b0'));
+
+assert(numel(mainIndices) <= 1, ...
+    '%s has multiple main DWI series requiring manual resolution: %s', ...
+    subjectPrefix, strjoin({series(mainIndices).path}, ' | '));
+assert(numel(b0Indices) <= 1, ...
+    '%s has multiple DWI B0 AP series requiring manual resolution: %s', ...
+    subjectPrefix, strjoin({series(b0Indices).path}, ' | '));
+
+if ~isempty(mainIndices)
+    series(mainIndices).selected = true;
+    series(mainIndices).decision = 'keep_unique_main_dwi';
+end
+if ~isempty(b0Indices)
+    assert(~isempty(mainIndices), ...
+        '%s has a DWI B0 AP series but no main DWI.', subjectPrefix);
+    series(b0Indices).selected = true;
+    series(b0Indices).decision = 'keep_unique_dwi_b0';
+elseif ~isempty(mainIndices)
+    warning('%s has main DWI but no DWI B0 AP fieldmap.', subjectPrefix);
+end
+end
+
+
+function [series, pairs] = selectFieldmapPairs(series, scanGroups, subjectPrefix)
+pairTemplate = struct('scanIndex', 0, 'apSeriesIndex', 0, ...
+    'paSeriesIndex', 0, 'acquisitionKey', NaN, 'run', 0, ...
+    'identifier', '');
+pairs = repmat(pairTemplate, 0, 1);
+
+for scanIndex = 1:numel(scanGroups)
+    indices = find(strcmp({series.kind}, 'fmap') & ...
+        [series.scanIndex] == scanIndex);
+    if isempty(indices)
+        continue;
+    end
+
+    taskMarked = [series(indices).taskMarkedFmap];
+    assert(~(any(taskMarked) && any(~taskMarked)), ...
+        ['%s scan container has both regular and _TASK fieldmaps. ', ...
+         'Manual resolution required: %s'], subjectPrefix, ...
+         scanGroups(scanIndex).relativePath);
+
+    maximumFiles = max([series(indices).fileCount]);
+    complete = [series(indices).fileCount] == maximumFiles;
+    for index = reshape(indices(~complete), 1, [])
+        series(index).decision = 'drop_incomplete_fmap_shorter_file_count';
+    end
+    completeIndices = indices(complete);
+
+    apIndices = completeIndices(strcmp({series(completeIndices).direction}, 'AP'));
+    paIndices = completeIndices(strcmp({series(completeIndices).direction}, 'PA'));
+    assert(numel(apIndices) == numel(paIndices) && ~isempty(apIndices), ...
+        ['%s scan container does not have balanced complete AP/PA ', ...
+         'fieldmaps after file-count filtering: %s'], ...
+         subjectPrefix, scanGroups(scanIndex).relativePath);
+
+    apIndices = sortSeriesByTime(series, apIndices);
+    paIndices = sortSeriesByTime(series, paIndices);
+    for pairIndex = 1:numel(apIndices)
+        pair = pairTemplate;
+        pair.scanIndex = scanIndex;
+        pair.apSeriesIndex = apIndices(pairIndex);
+        pair.paSeriesIndex = paIndices(pairIndex);
+        pair.acquisitionKey = min( ...
+            series(pair.apSeriesIndex).acquisitionKey, ...
+            series(pair.paSeriesIndex).acquisitionKey);
+        pairs(end + 1, 1) = pair; %#ok<AGROW>
+    end
+end
+
+if isempty(pairs)
+    return;
+end
+
+sortMatrix = [[pairs.acquisitionKey]', ...
+    [series([pairs.apSeriesIndex]).seriesNumber]'];
+[~, order] = sortrows(sortMatrix, [1, 2]);
+pairs = pairs(order);
+
+for run = 1:numel(pairs)
+    pairs(run).run = run;
+    pairs(run).identifier = sprintf('func_fmap_run_%d', run);
+    selected = [pairs(run).apSeriesIndex, pairs(run).paSeriesIndex];
+    for index = selected
+        series(index).selected = true;
+        series(index).decision = 'keep_complete_paired_fmap';
+        series(index).fmapRun = run;
+    end
+end
+end
+
+
+function chosen = chooseLatestSeries(series, indices, description)
+if isscalar(indices)
+    chosen = indices;
+    return;
+end
+
+sortMatrix = [[series(indices).acquisitionKey]', ...
+    [series(indices).seriesNumber]'];
+[sortedValues, order] = sortrows(sortMatrix, [1, 2]);
+if isequal(sortedValues(end, :), sortedValues(end - 1, :))
+    error('Cannot determine the latest series for %s.', description);
+end
+chosen = indices(order(end));
+end
+
+
+function indices = sortSeriesByTime(series, indices)
+sortMatrix = [[series(indices).acquisitionKey]', ...
+    [series(indices).seriesNumber]'];
+[~, order] = sortrows(sortMatrix, [1, 2]);
+indices = indices(order);
+end
+
+
+function series = assignBidsDestinations(series, fmapPairs, subjectPrefix)
+for index = reshape(find([series.selected]), 1, [])
+    switch series(index).kind
+        case 'bold'
+            if strcmp(series(index).taskName, 'rest')
+                stem = sprintf('%s_task-rest_run-%d_bold', ...
+                    subjectPrefix, series(index).restRun);
+            else
+                stem = sprintf('%s_task-%s_bold', ...
+                    subjectPrefix, series(index).taskName);
+            end
+            series(index).bidsImageRelative = fullfile('func', [stem, '.nii.gz']);
+
+        case 'fmap'
+            stem = sprintf('%s_dir-%s_run-%d_epi', subjectPrefix, ...
+                series(index).direction, series(index).fmapRun);
+            series(index).bidsImageRelative = fullfile('fmap', [stem, '.nii.gz']);
+
+        case 'dwi_main'
+            series(index).bidsImageRelative = fullfile('dwi', ...
+                [subjectPrefix, '_dir-PA_dwi.nii.gz']);
+
+        case 'dwi_b0'
+            series(index).bidsImageRelative = fullfile('fmap', ...
+                [subjectPrefix, '_acq-dwi_dir-AP_epi.nii.gz']);
+
+        case 't1'
+            series(index).bidsImageRelative = fullfile('anat', ...
+                [subjectPrefix, '_T1w.nii.gz']);
+
+        case 't2'
+            series(index).bidsImageRelative = fullfile('anat', ...
+                [subjectPrefix, '_T2w.nii.gz']);
+    end
+end
+
+assert(all([fmapPairs.run] == 1:numel(fmapPairs)), ...
+    'Internal fieldmap run assignment is inconsistent.');
+end
+
+
+function validateUniqueDestinations(series)
+selected = series([series.selected]);
+destinations = lower(string({selected.bidsImageRelative}));
+assert(numel(destinations) == numel(unique(destinations)), ...
+    'Multiple selected source series map to the same BIDS destination.');
+end
+
+
+function identifiers = fmapIdentifiersForScan(fmapPairs, scanIndex)
+identifiers = {fmapPairs([fmapPairs.scanIndex] == scanIndex).identifier};
+end
+
+
+function targets = boldTargetsForScan(series, scanIndex, subjectPrefix)
+indices = find(strcmp({series.kind}, 'bold') & [series.selected] & ...
+    [series.scanIndex] == scanIndex);
+targets = cell(1, numel(indices));
+for item = 1:numel(indices)
+    targets{item} = bidsUri(subjectPrefix, ...
+        series(indices(item)).bidsImageRelative);
+end
+end
+
+
+function uri = bidsUri(subjectPrefix, relativePath)
+relativePath = strrep(relativePath, '\', '/');
+uri = ['bids::', subjectPrefix, '/', relativePath];
+end
+
+
+function files = listDicomFiles(folder)
+entries = dir(folder);
+entries = entries(~[entries.isdir]);
+keep = false(size(entries));
+for index = 1:numel(entries)
+    [~, ~, extension] = fileparts(entries(index).name);
+    keep(index) = isempty(extension) || ...
+        any(strcmpi(extension, {'.dcm', '.ima'}));
+end
+entries = entries(keep);
+[~, order] = sort(lower(string({entries.name})));
+entries = entries(order);
+files = fullfile({entries.folder}, {entries.name});
+end
+
+
+function [header, firstDicom] = readFirstDicomHeader(files)
+lastError = '';
+for index = 1:numel(files)
+    try
+        header = dicominfo(files{index});
+        firstDicom = files{index};
+        return;
+    catch exception
+        lastError = exception.message;
+    end
+end
+error('No readable DICOM file found. Last error: %s', lastError);
+end
+
+
+function number = getSeriesNumber(header, folderName)
+if isfield(header, 'SeriesNumber')
+    number = double(header.SeriesNumber);
+    return;
+end
+token = regexp(folderName, '_(\d+)$', 'tokens', 'once');
+assert(~isempty(token), 'Cannot determine SeriesNumber for %s', folderName);
+number = str2double(token{1});
+end
+
+
+function key = getAcquisitionKey(header, seriesNumber)
+dateText = firstMetadataText(header, ...
+    {'AcquisitionDate', 'SeriesDate', 'StudyDate'});
+timeText = firstMetadataText(header, ...
+    {'AcquisitionTime', 'SeriesTime', 'StudyTime'});
+
+dateDigits = regexprep(dateText, '[^0-9]', '');
+if numel(dateDigits) >= 8
+    dateNumber = str2double(dateDigits(1:8));
+else
+    dateNumber = 0;
+end
+timeNumber = str2double(timeText);
+if isnan(timeNumber)
+    timeNumber = 0;
+end
+key = dateNumber * 1e6 + timeNumber + seriesNumber * 1e-6;
+end
+
+
+function text = firstMetadataText(header, fieldNames)
+text = '';
+for index = 1:numel(fieldNames)
+    fieldName = fieldNames{index};
+    if isfield(header, fieldName)
+        text = char(string(header.(fieldName)));
+        if ~isempty(text)
+            return;
+        end
+    end
+end
+end
+
+
+function tf = hasPrescanNormalize(header)
+imageTypeText = '';
+if isfield(header, 'ImageType')
+    imageTypeText = upper(valueToText(header.ImageType));
+end
+imageTypeTokens = regexp(imageTypeText, '[\\,; ]+', 'split');
+tf = any(strcmp(imageTypeTokens, 'NORM'));
+if tf
+    return;
+end
+
+privateText = '';
+fieldNames = fieldnames(header);
+for index = 1:numel(fieldNames)
+    fieldName = fieldNames{index};
+    if startsWith(fieldName, 'Private_0029') || ...
+            contains(upper(fieldName), 'CSA')
+        privateText = [privateText, ' ', ...
+            valueToText(header.(fieldName))]; %#ok<AGROW>
+    end
+end
+privateText = upper(privateText);
+tf = contains(privateText, 'NORMALIZEALGO') && ...
+    contains(privateText, 'PRESCAN');
+end
+
+
+function text = valueToText(value)
+if ischar(value)
+    text = value;
+elseif isstring(value)
+    text = strjoin(cellstr(value(:)), ' ');
+elseif iscell(value)
+    parts = cellfun(@valueToText, value, 'UniformOutput', false);
+    text = strjoin(parts, ' ');
+elseif isa(value, 'uint8')
+    text = char(value(:)');
+else
+    text = '';
+end
+end
+
+
+function [imagePath, jsonPath, bvecPath, bvalPath] = convertOneSeries( ...
+    dcm2niix, sourcePath, conversionDir)
+assert(~isfolder(conversionDir), ...
+    'Conversion output already exists: %s', conversionDir);
+mkdir(conversionDir);
+
+command = sprintf('"%s" -f converted -i y -z y -w 2 -o "%s" "%s"', ...
+    dcm2niix, conversionDir, sourcePath);
+[status, output] = system(command);
+assert(status == 0, 'dcm2niix failed for %s:\n%s', sourcePath, output);
+
+jsonFiles = dir(fullfile(conversionDir, '*.json'));
+assert(isscalar(jsonFiles), ...
+    'Expected one dcm2niix JSON output for %s, found %d.', ...
+    sourcePath, numel(jsonFiles));
+jsonPath = fullfile(jsonFiles(1).folder, jsonFiles(1).name);
+[~, baseName] = fileparts(jsonFiles(1).name);
+
+imagePath = fullfile(conversionDir, [baseName, '.nii.gz']);
+assert(isfile(imagePath), 'Missing converted NIfTI: %s', imagePath);
+bvecPath = fullfile(conversionDir, [baseName, '.bvec']);
+bvalPath = fullfile(conversionDir, [baseName, '.bval']);
+end
+
+
+function count = niftiVolumeCount(imagePath)
+info = niftiinfo(imagePath);
+if numel(info.ImageSize) >= 4
+    count = info.ImageSize(4);
+else
+    count = 1;
+end
+end
+
+
+function validateConvertedFieldmapPairs(series, fmapPairs)
+%VALIDATECONVERTEDFIELDMAPPAIRS Check geometry and opposing PE directions.
+
+for pairIndex = 1:numel(fmapPairs)
+    ap = series(fmapPairs(pairIndex).apSeriesIndex);
+    pa = series(fmapPairs(pairIndex).paSeriesIndex);
+    apJson = readJson(ap.convertedJson);
+    paJson = readJson(pa.convertedJson);
+
+    assert(isfield(apJson, 'PhaseEncodingDirection') && ...
+        isfield(paJson, 'PhaseEncodingDirection'), ...
+        'Missing PhaseEncodingDirection for fieldmap run %d.', ...
+        fmapPairs(pairIndex).run);
+    assert(areOppositePhaseEncoding( ...
+        apJson.PhaseEncodingDirection, paJson.PhaseEncodingDirection), ...
+        'Fieldmap run %d does not have opposing phase-encoding directions.', ...
+        fmapPairs(pairIndex).run);
+
+    apInfo = niftiinfo(ap.convertedImage);
+    paInfo = niftiinfo(pa.convertedImage);
+    assert(isequal(apInfo.ImageSize, paInfo.ImageSize), ...
+        'AP/PA NIfTI dimensions differ for fieldmap run %d.', ...
+        fmapPairs(pairIndex).run);
+
+    for field = {'EchoTime', 'RepetitionTime', 'TotalReadoutTime'}
+        fieldName = field{1};
+        if isfield(apJson, fieldName) && isfield(paJson, fieldName)
+            assert(abs(double(apJson.(fieldName)) - ...
+                double(paJson.(fieldName))) < 1e-9, ...
+                'AP/PA %s differs for fieldmap run %d.', ...
+                fieldName, fmapPairs(pairIndex).run);
+        end
+    end
+end
+end
+
+
+function tf = areOppositePhaseEncoding(first, second)
+first = char(string(first));
+second = char(string(second));
+firstAxis = erase(first, '-');
+secondAxis = erase(second, '-');
+firstNegative = endsWith(first, '-');
+secondNegative = endsWith(second, '-');
+tf = strcmp(firstAxis, secondAxis) && xor(firstNegative, secondNegative);
+end
+
+
+function metadata = readJson(path)
+metadata = jsondecode(fileread(path));
+end
+
+
+function writeJson(metadata, path)
+parent = fileparts(path);
+if ~isfolder(parent)
+    mkdir(parent);
+end
+encoded = jsonencode(metadata, 'PrettyPrint', true);
+fileId = fopen(path, 'w', 'n', 'UTF-8');
+assert(fileId ~= -1, 'Cannot open JSON output: %s', path);
+cleanup = onCleanup(@() fclose(fileId));
+fprintf(fileId, '%s\n', encoded);
+clear cleanup;
+end
+
+
+function metadata = setOrRemoveField(metadata, fieldName, value)
+if isempty(value)
+    if isfield(metadata, fieldName)
+        metadata = rmfield(metadata, fieldName);
+    end
+else
+    if iscell(value) && isscalar(value)
+        metadata.(fieldName) = value{1};
+    else
+        metadata.(fieldName) = value;
+    end
+end
+end
+
+
+function destination = replaceNiftiExtension(path, newExtension)
+if endsWith(path, '.nii.gz', 'IgnoreCase', true)
+    destination = [extractBefore(path, strlength(path) - 6), newExtension];
+elseif endsWith(path, '.nii', 'IgnoreCase', true)
+    destination = [extractBefore(path, strlength(path) - 3), newExtension];
+else
+    error('Unexpected NIfTI path: %s', path);
+end
+destination = char(destination);
+end
+
+
+function copyNoOverwrite(source, destination)
+assert(~isfile(destination), 'Refusing to overwrite: %s', destination);
+parent = fileparts(destination);
+if ~isfolder(parent)
+    mkdir(parent);
+end
+[success, message] = copyfile(source, destination);
+assert(success, 'Failed to copy %s to %s: %s', source, destination, message);
+end
+
+
+function manifest = writeManifest(series, niftiSubjectDir)
+manifest = table( ...
+    [series.scanIndex]', ...
+    string({series.scanRelative})', ...
+    string({series.name})', ...
+    string({series.kind})', ...
+    [series.fileCount]', ...
+    [series.seriesNumber]', ...
+    [series.acquisitionKey]', ...
+    [series.prescanNormalized]', ...
+    [series.selected]', ...
+    string({series.decision})', ...
+    string({series.bidsImageRelative})', ...
+    'VariableNames', {'source_scan_index', 'source_scan_path', ...
+    'series_folder', 'series_kind', 'dicom_file_count', 'series_number', ...
+    'acquisition_key', 'prescan_normalized', 'selected', ...
+    'decision', 'bids_image'});
+writetable(manifest, fullfile(niftiSubjectDir, ...
+    'conversion_manifest.tsv'), 'FileType', 'text', 'Delimiter', '\t');
+end
+
+
+function writeEvents(psychDir, bidsSubjectDir, subjectPrefix, series)
+keptTasks = unique(string({series(strcmp({series.kind}, 'bold') & ...
+    [series.selected]).taskName}));
+keptTasks(keptTasks == "rest") = [];
+if isempty(keptTasks)
+    return;
+end
+if ~isfolder(psychDir)
+    warning('%s has task BOLD data but no PSYCH folder.', subjectPrefix);
+    return;
+end
+
+csvFiles = dir(fullfile(psychDir, '*.csv'));
+for task = reshape(keptTasks, 1, [])
+    matches = false(size(csvFiles));
+    for index = 1:numel(csvFiles)
+        matches(index) = strcmp(classifyPsychTask(csvFiles(index).name), task);
+    end
+    assert(sum(matches) <= 1, ...
+        '%s has multiple event CSV files for task %s.', subjectPrefix, task);
+    if ~any(matches)
+        warning('%s has no event CSV file for task %s.', subjectPrefix, task);
+        continue;
+    end
+    csvFile = csvFiles(find(matches, 1));
+    events = buildEventsTable(fullfile(csvFile.folder, csvFile.name), task);
+    outputPath = fullfile(bidsSubjectDir, 'func', ...
+        sprintf('%s_task-%s_events.tsv', subjectPrefix, task));
+    writetable(events, outputPath, 'FileType', 'text', 'Delimiter', '\t');
+end
+end
+
+
+function task = classifyPsychTask(fileName)
+upperName = upper(fileName);
+hits = [contains(upperName, 'SST'), contains(upperName, 'NBACK'), ...
+    contains(upperName, 'SWITCH')];
+if sum(hits) ~= 1
+    task = "";
+elseif hits(1)
+    task = "sst";
+elseif hits(2)
+    task = "nback";
+else
+    task = "switch";
+end
+end
+
+
+function events = buildEventsTable(csvPath, task)
+psych = readtable(csvPath);
+mriStartTime = psych.MRI_Signal_s_started(1) + ...
+    psych.MRI_Signal_s_rt(1);
+psych(isnan(psych.Trial_fix_started), :) = [];
+rowCount = height(psych);
+
+events = table('Size', [rowCount, 5], ...
+    'VariableTypes', {'double', 'double', 'string', 'double', 'double'}, ...
+    'VariableNames', {'onset', 'duration', 'trial_type', ...
+    'response_time', 'value'});
+events.onset = psych.Trial_fix_started - mriStartTime;
+events.duration = psych.key_resp_stopped - psych.Trial_fix_started;
+events.response_time = psych.key_resp_rt;
+events.value = psych.key_resp_corr;
+
+switch task
+    case "sst"
+        for row = 1:rowCount
+            if strcmp(psych.bad{row}, 'None')
+                events.trial_type(row) = "go";
+            else
+                events.trial_type(row) = "stop";
+            end
+        end
+    case "nback"
+        for row = 1:rowCount
+            if contains(psych.Trial_loop_list{row}, '0back')
+                events.trial_type(row) = "0back";
+            else
+                events.trial_type(row) = "2back";
+            end
+        end
+    case "switch"
+        for row = 1:rowCount
+            if contains(psych.Trial_loop_list{row}, 'nonswitch')
+                events.trial_type(row) = "nonswitch";
+            else
+                events.trial_type(row) = "switch";
+            end
+        end
+end
+end
