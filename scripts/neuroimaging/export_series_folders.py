@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""List MRI sequence-folder names at the scanner Study-directory level."""
+"""List containers whose direct child folders match MRI sequence prefixes."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 SEQUENCE_FOLDER_PATTERN = re.compile(
-    r"^(?:EP2D_|LOCALIZER|PHOENIXZIPREPORT|SMS\d*_(?:BOLD|DIFF)_|T1_|T2_)",
+    r"^(?:EP2D_|LOCALIZER|PHOENIXZIPREPORT|SMS.*_(?:BOLD|DIFF)_|T1_|T2_)",
     re.IGNORECASE,
 )
 
@@ -33,32 +33,30 @@ def subject_id_from_folder(name: str) -> str:
 
 
 def scan_subject(subject_dir: Path) -> dict:
-    """Find scan folders by their immediate sequence-folder names at any depth."""
+    """List MRIdata-relative containers and their matching sequence folders."""
     mri_dir = subject_dir / "MRIdata"
-    detected_scans = []
+    sequence_containers = []
 
     if mri_dir.is_dir():
         for dirpath, dirnames, _ in os.walk(mri_dir):
             dirnames.sort()
             matched_names = [name for name in dirnames if is_sequence_folder(name)]
             if matched_names:
-                detected_scans.append((Path(dirpath), list(dirnames)))
+                relative_path = Path(dirpath).relative_to(mri_dir).as_posix()
+                sequence_containers.append(
+                    {
+                        "relative_path": relative_path or ".",
+                        "sequence_folders": matched_names,
+                    }
+                )
                 # Sequence directories contain DICOM files, which are irrelevant here.
                 dirnames[:] = [name for name in dirnames if not is_sequence_folder(name)]
 
-    scan_groups = [
-        {
-            "scan_group": f"scan_{index:02d}",
-            "sequence_folders": sequence_folders,
-        }
-        for index, (_, sequence_folders) in enumerate(
-            sorted(detected_scans, key=lambda item: str(item[0])), 1
-        )
-    ]
-
     return {
         "subject_id": subject_id_from_folder(subject_dir.name),
-        "scan_groups": scan_groups,
+        "sequence_containers": sorted(
+            sequence_containers, key=lambda item: item["relative_path"]
+        ),
     }
 
 
@@ -74,12 +72,16 @@ def write_csv(subjects: list[dict], path: Path) -> None:
     """Write one sequence-folder name per row for spreadsheet inspection."""
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["subject_id", "scan_group", "sequence_folder"])
+        writer.writerow(["subject_id", "relative_path", "sequence_folder"])
         for subject in subjects:
-            for group in subject["scan_groups"]:
-                for sequence_folder in group["sequence_folders"]:
+            for container in subject["sequence_containers"]:
+                for sequence_folder in container["sequence_folders"]:
                     writer.writerow(
-                        [subject["subject_id"], group["scan_group"], sequence_folder]
+                        [
+                            subject["subject_id"],
+                            container["relative_path"],
+                            sequence_folder,
+                        ]
                     )
 
 
@@ -105,12 +107,15 @@ def main() -> None:
     write_csv(subjects, csv_dir / "series_folders.csv")
 
     sequence_count = sum(
-        len(group["sequence_folders"])
+        len(container["sequence_folders"])
         for subject in subjects
-        for group in subject["scan_groups"]
+        for container in subject["sequence_containers"]
     )
     print(f"Subjects: {len(subjects)}")
-    print(f"Study folders: {sum(len(s['scan_groups']) for s in subjects)}")
+    print(
+        "Sequence containers: "
+        f"{sum(len(s['sequence_containers']) for s in subjects)}"
+    )
     print(f"Sequence folders: {sequence_count}")
     print(f"JSONL: {json_dir / 'series_folders.jsonl'}")
     print(f"CSV:   {csv_dir / 'series_folders.csv'}")

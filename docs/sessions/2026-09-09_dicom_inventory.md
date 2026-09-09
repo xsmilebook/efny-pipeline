@@ -15,9 +15,9 @@
 
 - `series_folders.jsonl` 为 GPT 主输入，每行对应一个被试。
 - `series_folders.csv` 为每序列文件夹一行的长表。
-- 默认不导出原始被试目录名或含姓名的中间相对路径；中间 MRI 容器匿名编号为 `scan_01`、`scan_02`。
-- 从 `MRIdata` 向下递归；当某目录的直接子目录命中 `EP2D_`、`LOCALIZER`、`PHOENIXZIPREPORT`、`SMS*_BOLD_`、`SMS*_DIFF_`、`T1_` 或 `T2_` 时，将该目录识别为一次 scan，并导出它的全部直接子目录。
-- scan 检测不依赖固定深度，因此兼容 `MRIdata/scan/sequence` 和 `MRIdata/wrapper/scan/sequence`。
+- 不导出原始被试目录名，以解析得到的精简被试 ID 代替；保留 `MRIdata` 以下的容器相对路径。相对路径可能含扫描仪导出名称，对外分享前需要检查。
+- 从 `MRIdata` 向下递归；当某目录的直接子目录命中 `EP2D_`、`LOCALIZER`、`PHOENIXZIPREPORT`、`SMS*_BOLD_`、`SMS*_DIFF_`、`T1_` 或 `T2_` 时，记录该目录相对 `MRIdata` 的路径，并仅导出命中前缀的直接子目录。
+- 不再把命中的容器解释为一次 scan，也不生成 `scan_01`、`scan_02`。检测不依赖固定深度，因此兼容 `MRIdata/container/sequence` 和 `MRIdata/wrapper/container/sequence`。
 - 不统计文件数，不读取 DICOM 头，不生成 `bids_guess`。
 
 ## 运行命令
