@@ -79,7 +79,13 @@ stop subject conversion.
 
 Selected series are passed to `dcm2niix` with `-i y`; checks on this cohort
 confirmed that it does not exclude the selected Prescan Normalize T1 or DWI B0
-series. A conversion failure skips only that series with a warning. If one
+series. On Windows, a selected series containing a DICOM path of 260 characters
+or more is exposed to `dcm2niix` through a unique short temporary directory
+junction. If the source location does not support junctions, the series is
+copied to a short local temporary directory with sequential file names. These
+temporary inputs are isolated across parallel workers and removed when the
+series conversion finishes or raises an error. A conversion failure skips only
+that series with a warning. If one
 direction of a functional fieldmap pair fails, both directions of that pair are
 omitted. SST event CSV headers are preserved, and the required `bad` column is
 matched case-insensitively after removing surrounding whitespace and a possible

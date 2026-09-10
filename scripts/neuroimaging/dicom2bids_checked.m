@@ -713,10 +713,12 @@ function [imagePath, jsonPath, bvecPath, bvalPath] = convertOneSeries( ...
     dcm2niix, sourcePath, conversionDir)
 mkdir(conversionDir);
 
+[conversionSource, sourceCleanup] = shortDcm2niixSource(sourcePath); %#ok<ASGLU>
 command = sprintf('"%s" -f converted -i y -z y -w 2 -o "%s" "%s"', ...
-    dcm2niix, conversionDir, sourcePath);
+    dcm2niix, conversionDir, conversionSource);
 [status, output] = system(command);
-assert(status == 0, 'dcm2niix failed for %s:\n%s', sourcePath, output);
+assert(status == 0, 'dcm2niix exit %d for %s:\n%s', ...
+    status, sourcePath, output);
 
 jsonFiles = dir(fullfile(conversionDir, '*.json'));
 assert(isscalar(jsonFiles), ...
@@ -729,6 +731,90 @@ imagePath = fullfile(conversionDir, [baseName, '.nii.gz']);
 assert(isfile(imagePath), 'Missing converted NIfTI: %s', imagePath);
 bvecPath = fullfile(conversionDir, [baseName, '.bvec']);
 bvalPath = fullfile(conversionDir, [baseName, '.bval']);
+end
+
+
+function [conversionSource, cleanup] = shortDcm2niixSource(sourcePath)
+%SHORTDCM2NIIXSOURCE Avoid legacy Windows path limits for DICOM input.
+
+conversionSource = sourcePath;
+cleanup = [];
+if ~ispc
+    return;
+end
+
+dicomFiles = listDicomFiles(sourcePath);
+windowsMaxPath = 260;
+if all(cellfun(@numel, dicomFiles) < windowsMaxPath)
+    return;
+end
+
+temporaryPath = tempname;
+assert(~contains(sourcePath, '"') && ~contains(temporaryPath, '"'), ...
+    'DICOM paths containing double quotes are not supported.');
+junctionCommand = sprintf('cmd.exe /d /c mklink /J "%s" "%s"', ...
+    temporaryPath, sourcePath);
+aliasPathsAreShort = true;
+for fileIndex = 1:numel(dicomFiles)
+    [~, fileName, extension] = fileparts(dicomFiles{fileIndex});
+    aliasPathsAreShort = aliasPathsAreShort && numel(fullfile( ...
+        temporaryPath, [fileName, extension])) < windowsMaxPath;
+end
+if aliasPathsAreShort
+    [junctionStatus, junctionOutput] = system(junctionCommand);
+else
+    junctionStatus = 1;
+    junctionOutput = ['The temporary junction would still contain a ', ...
+        'DICOM path of 260 characters or more.'];
+end
+if junctionStatus == 0
+    conversionSource = temporaryPath;
+    cleanup = onCleanup(@() removeTemporaryDcmSource(temporaryPath, true));
+    return;
+end
+
+mkdir(temporaryPath);
+cleanup = onCleanup(@() removeTemporaryDcmSource(temporaryPath, false));
+for fileIndex = 1:numel(dicomFiles)
+    [~, ~, extension] = fileparts(dicomFiles{fileIndex});
+    if isempty(extension)
+        extension = '.dcm';
+    end
+    stagedPath = fullfile(temporaryPath, sprintf( ...
+        '%06d%s', fileIndex, lower(extension)));
+    [copied, copyMessage] = copyfile(dicomFiles{fileIndex}, stagedPath);
+    assert(copied, 'Failed to stage long-path DICOM %s:\n%s', ...
+        dicomFiles{fileIndex}, copyMessage);
+end
+
+warning('DICOM2BIDS:LongPathCopyFallback', ...
+    ['A temporary junction could not be used for %s. The series was ', ...
+    'copied to a short local path before conversion. Junction diagnostic:\n%s'], ...
+    sourcePath, strtrim(junctionOutput));
+conversionSource = temporaryPath;
+end
+
+
+function removeTemporaryDcmSource(temporaryPath, isJunction)
+%REMOVETEMPORARYDCMSOURCE Remove one temporary input alias or staged copy.
+
+if isJunction
+    command = sprintf('cmd.exe /d /c rmdir "%s"', temporaryPath);
+    [status, output] = system(command);
+    if status ~= 0
+        warning('DICOM2BIDS:TemporaryCleanupFailed', ...
+            'Failed to remove temporary DICOM junction %s:\n%s', ...
+            temporaryPath, output);
+    end
+    return;
+end
+
+[removed, message] = rmdir(temporaryPath, 's');
+if ~removed
+    warning('DICOM2BIDS:TemporaryCleanupFailed', ...
+        'Failed to remove temporary staged DICOM directory %s:\n%s', ...
+        temporaryPath, message);
+end
 end
 
 
