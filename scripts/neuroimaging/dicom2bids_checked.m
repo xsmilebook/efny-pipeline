@@ -851,11 +851,24 @@ for task = reshape(keptTasks, 1, [])
         warning('%s has no event CSV file for task %s.', subjectPrefix, task);
         continue;
     end
-    csvFile = chooseLatestEventCsv(csvFiles(matches), subjectPrefix, task);
-    events = buildEventsTable(fullfile(csvFile.folder, csvFile.name), task);
-    outputPath = fullfile(bidsSubjectDir, 'func', ...
-        sprintf('%s_task-%s_events.tsv', subjectPrefix, task));
-    writetable(events, outputPath, 'FileType', 'text', 'Delimiter', '\t');
+    csvPath = '';
+    try
+        csvFile = chooseLatestEventCsv(csvFiles(matches), subjectPrefix, task);
+        csvPath = fullfile(csvFile.folder, csvFile.name);
+        events = buildEventsTable(csvPath, task);
+        outputPath = fullfile(bidsSubjectDir, 'func', ...
+            sprintf('%s_task-%s_events.tsv', subjectPrefix, task));
+        writetable(events, outputPath, 'FileType', 'text', 'Delimiter', '\t');
+    catch exception
+        if isempty(csvPath)
+            sourceDescription = strjoin({csvFiles(matches).name}, ' | ');
+        else
+            sourceDescription = csvPath;
+        end
+        warning('DICOM2BIDS:EventWriteFailed', ...
+            '%s skipped events for task %s from %s: %s', ...
+            subjectPrefix, task, sourceDescription, exception.message);
+    end
 end
 end
 
@@ -911,45 +924,85 @@ end
 
 
 function events = buildEventsTable(csvPath, task)
+%BUILDEVENTSTABLE Convert one PsychoPy task CSV to BIDS event timing.
+
 psych = readtable(csvPath, 'VariableNamingRule', 'preserve');
-mriStartTime = psych.MRI_Signal_s_started(1) + ...
-    psych.MRI_Signal_s_rt(1);
-psych(isnan(psych.Trial_fix_started), :) = [];
+columns = eventColumnNames(psych, task, csvPath);
+mriStarted = psych.(columns.mriStarted);
+mriRt = psych.(columns.mriRt);
+mriStartTime = mriStarted(1) + mriRt(1);
+trialFixStarted = psych.(columns.trialFixStarted);
+psych(isnan(trialFixStarted), :) = [];
 rowCount = height(psych);
 
 events = table('Size', [rowCount, 5], ...
     'VariableTypes', {'double', 'double', 'string', 'double', 'double'}, ...
     'VariableNames', {'onset', 'duration', 'trial_type', ...
     'response_time', 'value'});
-events.onset = psych.Trial_fix_started - mriStartTime;
-events.duration = psych.key_resp_stopped - psych.Trial_fix_started;
-events.response_time = psych.key_resp_rt;
-events.value = psych.key_resp_corr;
+trialFixStarted = psych.(columns.trialFixStarted);
+events.onset = trialFixStarted - mriStartTime;
+events.duration = psych.(columns.keyRespStopped) - trialFixStarted;
+events.response_time = psych.(columns.keyRespRt);
+events.value = psych.(columns.keyRespCorr);
 
 switch task
     case "sst"
-        badColumn = originalColumnName(psych, 'bad', csvPath);
         events.trial_type(:) = "stop";
-        events.trial_type(strcmp(string(psych.(badColumn)), 'None')) = "go";
+        events.trial_type(strcmp( ...
+            string(psych.(columns.bad)), 'None')) = "go";
     case "nback"
         events.trial_type(:) = "2back";
-        events.trial_type(contains(psych.Trial_loop_list, '0back')) = "0back";
+        events.trial_type(contains( ...
+            string(psych.(columns.trialLoopList)), '0back')) = "0back";
     case "switch"
         events.trial_type(:) = "switch";
         events.trial_type(contains( ...
-            psych.Trial_loop_list, 'nonswitch')) = "nonswitch";
+            string(psych.(columns.trialLoopList)), ...
+            'nonswitch')) = "nonswitch";
 end
 end
 
 
-function columnName = originalColumnName(inputTable, expectedName, csvPath)
-%ORIGINALCOLUMNNAME Match a required CSV column without MATLAB renaming it.
+function columns = eventColumnNames(inputTable, task, csvPath)
+%EVENTCOLUMNNAMES Resolve the documented PsychoPy columns for one task.
+
+columns = struct( ...
+    'mriStarted', requiredColumnName(inputTable, ...
+        ["MRI_Signal_s.started", "MRI_Signal_s_started"], csvPath), ...
+    'mriRt', requiredColumnName(inputTable, ...
+        ["MRI_Signal_s.rt", "MRI_Signal_s_rt"], csvPath), ...
+    'trialFixStarted', requiredColumnName(inputTable, ...
+        ["Trial_fix.started", "Trial_fix_started"], csvPath), ...
+    'keyRespStopped', requiredColumnName(inputTable, ...
+        ["key_resp.stopped", "key_resp_stopped"], csvPath), ...
+    'keyRespRt', requiredColumnName(inputTable, ...
+        ["key_resp.rt", "key_resp_rt"], csvPath), ...
+    'keyRespCorr', requiredColumnName(inputTable, ...
+        ["key_resp.corr", "key_resp_corr"], csvPath), ...
+    'bad', '', ...
+    'trialLoopList', '');
+
+switch task
+    case "sst"
+        columns.bad = requiredColumnName(inputTable, "bad", csvPath);
+    case {"nback", "switch"}
+        columns.trialLoopList = requiredColumnName( ...
+            inputTable, "Trial_loop_list", csvPath);
+end
+end
+
+
+function columnName = requiredColumnName(inputTable, acceptedNames, csvPath)
+%REQUIREDCOLUMNNAME Match one required raw header and reject ambiguity.
 
 names = string(inputTable.Properties.VariableNames);
 normalized = lower(strtrim(erase(names, char(65279))));
-matches = find(normalized == lower(string(expectedName)));
+acceptedNames = string(acceptedNames);
+acceptedNormalized = lower(strtrim(erase(acceptedNames, char(65279))));
+matches = find(ismember(normalized, acceptedNormalized));
 assert(isscalar(matches), ...
-    'Expected exactly one %s column in %s; available columns: %s', ...
-    expectedName, csvPath, strjoin(cellstr(names), ', '));
+    ['Expected exactly one of [%s] in %s; actual PsychoPy headers: ', ...
+     '%s'], strjoin(cellstr(acceptedNames), ' | '), csvPath, ...
+    strjoin(cellstr(names), ', '));
 columnName = char(names(matches));
 end

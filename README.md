@@ -83,7 +83,12 @@ series. A conversion failure skips only that series with a warning. If one
 direction of a functional fieldmap pair fails, both directions of that pair are
 omitted. SST event CSV headers are preserved, and the required `bad` column is
 matched case-insensitively after removing surrounding whitespace and a possible
-byte order mark.
+byte order mark. All required PsychoPy component fields are resolved from their
+original dotted headers, with the underscore form accepted for older exports.
+Before event calculation, the task-specific required columns are checked as one
+schema. A failure in event-file selection, schema validation, conversion, or
+writing skips only that task's events with a warning and does not fail the
+participant's converted imaging data.
 
 The batch entry point uses the project-specific paths and worker count written
 at the top of the script. Run it from MATLAB without arguments:
