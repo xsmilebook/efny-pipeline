@@ -77,13 +77,13 @@ Auxiliary and unsupported folders are classified by name and skipped before
 DICOM inspection. Empty `LOCALIZER*` or `PHOENIXZIPREPORT*` directories do not
 stop subject conversion.
 
-Selected series are passed to `dcm2niix` without its derived/2D-image ignore
-filter because selection has already been performed explicitly. A conversion
-failure skips only that series with a warning. If one direction of a functional
-fieldmap pair fails, both directions of that pair are omitted. SST event CSV
-headers are preserved, and the required `bad` column is matched
-case-insensitively after removing surrounding whitespace and a possible byte
-order mark.
+Selected series are passed to `dcm2niix` with `-i y`; checks on this cohort
+confirmed that it does not exclude the selected Prescan Normalize T1 or DWI B0
+series. A conversion failure skips only that series with a warning. If one
+direction of a functional fieldmap pair fails, both directions of that pair are
+omitted. SST event CSV headers are preserved, and the required `bad` column is
+matched case-insensitively after removing surrounding whitespace and a possible
+byte order mark.
 
 The batch entry point uses the project-specific paths and worker count written
 at the top of the script. Run it from MATLAB without arguments:

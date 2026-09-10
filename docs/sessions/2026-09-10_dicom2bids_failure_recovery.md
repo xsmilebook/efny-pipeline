@@ -12,9 +12,9 @@ Prescan Normalize T1 在候选中先保留 DICOM 文件数最多者，再按采�
 rest 重扫优先选择最后一个 180-volume 候选；不存在 180-volume 候选时仍转换最后一次
 可用采集，同时报告 warning。
 
-`dcm2niix` 改为 `-i n`，避免再次过滤已经由脚本明确选择的 derived 或 2D 序列。
-单序列转换失败只取消该序列并报告 warning；功能场图任一方向失败时成对取消，防止
-输出不完整的 AP/PA 对。
+`dcm2niix` 保持使用 `-i y`；已确认该参数不会过滤本队列选中的 Prescan Normalize T1
+和 DWI B0 序列。单序列转换失败只取消该序列并报告 warning；功能场图任一方向失败时
+成对取消，防止输出不完整的 AP/PA 对。
 
 事件 CSV 使用 `VariableNamingRule='preserve'` 保留原始标题。SST 的 `bad` 列在去除
 首尾空白和可能的 BOM 后执行不区分大小写的唯一匹配，避免 MATLAB 自动修改其他列名
