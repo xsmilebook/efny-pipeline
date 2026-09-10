@@ -41,8 +41,16 @@ selectedIndices = find([series.selected]);
 for index = reshape(selectedIndices, 1, [])
     conversionDir = fullfile(niftiSubjectDir, ...
         sprintf('scan_%03d', series(index).scanIndex), series(index).name);
-    [imagePath, jsonPath, bvecPath, bvalPath] = convertOneSeries( ...
-        dcm2niix, series(index).path, conversionDir);
+    try
+        [imagePath, jsonPath, bvecPath, bvalPath] = convertOneSeries( ...
+            dcm2niix, series(index).path, conversionDir);
+    catch exception
+        warning('DICOM2BIDS:SeriesConversionFailed', ...
+            '%s skipped series %s after conversion failure: %s', ...
+            subjectPrefix, series(index).path, exception.message);
+        series(index).selected = false;
+        continue;
+    end
     series(index).convertedImage = imagePath;
     series(index).convertedJson = jsonPath;
     series(index).convertedBvec = bvecPath;
@@ -57,23 +65,24 @@ for index = reshape(selectedIndices, 1, [])
     end
 end
 
+[series, fmapPairs] = dropFailedFieldmapPairs(series, fmapPairs, subjectPrefix);
 validateConvertedFieldmapPairs(series, fmapPairs);
 
+selectedIndices = find([series.selected]);
 for index = reshape(selectedIndices, 1, [])
     metadata = jsondecode(fileread(series(index).convertedJson));
 
     switch series(index).kind
         case 'bold'
             metadata.TaskName = series(index).taskName;
-            identifiers = fmapIdentifiersForScan( ...
-                fmapPairs, series(index).scanIndex);
+            identifiers = fmapIdentifiersForBold(fmapPairs, series(index));
             metadata = setOrRemoveField(metadata, 'B0FieldSource', identifiers);
 
         case 'fmap'
             pairIndex = find([fmapPairs.run] == series(index).fmapRun, 1);
             metadata.B0FieldIdentifier = fmapPairs(pairIndex).identifier;
-            intendedFor = boldTargetsForScan( ...
-                series, series(index).scanIndex, subjectPrefix);
+            intendedFor = boldTargetsForPair( ...
+                series, fmapPairs(pairIndex), subjectPrefix);
             metadata = setOrRemoveField(metadata, 'IntendedFor', intendedFor);
 
         case 'dwi_b0'
@@ -291,16 +300,21 @@ for key = reshape(logicalKeys, 1, [])
 
     if isRest
         complete = [series(indices).fileCount] == 180;
-        assert(any(complete), ...
-            '%s has no complete 180-volume candidate for %s.', ...
-            subjectPrefix, key);
+        if any(complete)
+            candidateIndices = indices(complete);
+        else
+            warning('DICOM2BIDS:IncompleteRest', ...
+                ['%s has no 180-volume candidate for %s; retaining the ', ...
+                 'latest available run.'], subjectPrefix, key);
+            candidateIndices = indices;
+        end
     else
         maximumFrames = max([series(indices).fileCount]);
         complete = [series(indices).fileCount] == maximumFrames;
+        candidateIndices = indices(complete);
     end
 
-    completeIndices = indices(complete);
-    chosen = chooseLatestSeries(series, completeIndices, ...
+    chosen = chooseLatestSeries(series, candidateIndices, ...
         sprintf('%s %s', subjectPrefix, key));
     series(chosen).selected = true;
 end
@@ -317,11 +331,8 @@ normalized = t1Indices([series(t1Indices).prescanNormalized]);
 assert(~isempty(normalized), ...
     '%s has T1 MPRAGE data but no Prescan Normalize reconstruction.', ...
     subjectPrefix);
-assert(isscalar(normalized), ...
-    '%s has multiple Prescan Normalize T1 MPRAGE series: %s', ...
-    subjectPrefix, strjoin({series(normalized).path}, ' | '));
-
-series(normalized).selected = true;
+series = selectLongestLatestSeries( ...
+    series, 't1', subjectPrefix, normalized);
 end
 
 
@@ -369,7 +380,7 @@ end
 function [series, pairs] = selectFieldmapPairs(series, scanGroups, subjectPrefix)
 pairTemplate = struct('scanIndex', 0, 'apSeriesIndex', 0, ...
     'paSeriesIndex', 0, 'acquisitionKey', NaN, 'run', 0, ...
-    'identifier', '');
+    'identifier', '', 'boldScope', 'all');
 pairs = repmat(pairTemplate, 0, 1);
 
 for scanIndex = 1:numel(scanGroups)
@@ -380,34 +391,40 @@ for scanIndex = 1:numel(scanGroups)
     end
 
     taskMarked = [series(indices).taskMarkedFmap];
-    assert(~(any(taskMarked) && any(~taskMarked)), ...
-        ['%s scan container has both regular and _TASK fieldmaps. ', ...
-         'Manual resolution required: %s'], subjectPrefix, ...
-         scanGroups(scanIndex).relativePath);
-
     maximumFiles = max([series(indices).fileCount]);
-    complete = [series(indices).fileCount] == maximumFiles;
-    completeIndices = indices(complete);
+    [regularPairs, regularComplete] = completeFieldmapPairs( ...
+        series, indices(~taskMarked), scanIndex, maximumFiles, pairTemplate);
+    [taskPairs, taskComplete] = completeFieldmapPairs( ...
+        series, indices(taskMarked), scanIndex, maximumFiles, pairTemplate);
 
-    apIndices = completeIndices(strcmp({series(completeIndices).direction}, 'AP'));
-    paIndices = completeIndices(strcmp({series(completeIndices).direction}, 'PA'));
-    assert(numel(apIndices) == numel(paIndices) && ~isempty(apIndices), ...
-        ['%s scan container does not have balanced complete AP/PA ', ...
-         'fieldmaps after file-count filtering: %s'], ...
-         subjectPrefix, scanGroups(scanIndex).relativePath);
-
-    apIndices = sortSeriesByTime(series, apIndices);
-    paIndices = sortSeriesByTime(series, paIndices);
-    for pairIndex = 1:numel(apIndices)
-        pair = pairTemplate;
-        pair.scanIndex = scanIndex;
-        pair.apSeriesIndex = apIndices(pairIndex);
-        pair.paSeriesIndex = paIndices(pairIndex);
-        pair.acquisitionKey = min( ...
-            series(pair.apSeriesIndex).acquisitionKey, ...
-            series(pair.paSeriesIndex).acquisitionKey);
-        pairs(end + 1, 1) = pair; %#ok<AGROW>
+    if regularComplete && taskComplete
+        [regularPairs.boldScope] = deal('rest');
+        [taskPairs.boldScope] = deal('task');
+        scanPairs = [regularPairs; taskPairs];
+    elseif regularComplete
+        scanPairs = regularPairs;
+        if any(taskMarked)
+            warning('DICOM2BIDS:IncompleteTaskFieldmap', ...
+                ['%s ignored incomplete _TASK fieldmaps and retained the ', ...
+                 'regular fieldmap for all BOLD runs: %s'], ...
+                subjectPrefix, scanGroups(scanIndex).relativePath);
+        end
+    elseif taskComplete
+        scanPairs = taskPairs;
+        if any(~taskMarked)
+            warning('DICOM2BIDS:IncompleteRegularFieldmap', ...
+                ['%s ignored incomplete regular fieldmaps and retained the ', ...
+                 '_TASK fieldmap for all BOLD runs: %s'], ...
+                subjectPrefix, scanGroups(scanIndex).relativePath);
+        end
+    else
+        warning('DICOM2BIDS:NoCompleteFieldmap', ...
+            ['%s has no balanced complete AP/PA fieldmap pair; fieldmaps ', ...
+             'will be omitted: %s'], ...
+            subjectPrefix, scanGroups(scanIndex).relativePath);
+        continue;
     end
+    pairs = [pairs; scanPairs]; %#ok<AGROW>
 end
 
 if isempty(pairs)
@@ -428,6 +445,39 @@ for run = 1:numel(pairs)
         series(index).fmapRun = run;
     end
 end
+end
+
+
+function [pairs, isComplete] = completeFieldmapPairs( ...
+    series, indices, scanIndex, requiredFileCount, pairTemplate)
+%COMPLETEFIELDMAPPAIRS Retain balanced AP/PA pairs at the largest file count.
+
+pairs = repmat(pairTemplate, 0, 1);
+isComplete = false;
+if isempty(indices)
+    return;
+end
+
+completeIndices = indices([series(indices).fileCount] == requiredFileCount);
+apIndices = completeIndices(strcmp({series(completeIndices).direction}, 'AP'));
+paIndices = completeIndices(strcmp({series(completeIndices).direction}, 'PA'));
+if isempty(apIndices) || numel(apIndices) ~= numel(paIndices)
+    return;
+end
+
+apIndices = sortSeriesByTime(series, apIndices);
+paIndices = sortSeriesByTime(series, paIndices);
+for pairIndex = 1:numel(apIndices)
+    pair = pairTemplate;
+    pair.scanIndex = scanIndex;
+    pair.apSeriesIndex = apIndices(pairIndex);
+    pair.paSeriesIndex = paIndices(pairIndex);
+    pair.acquisitionKey = min( ...
+        series(pair.apSeriesIndex).acquisitionKey, ...
+        series(pair.paSeriesIndex).acquisitionKey);
+    pairs(end + 1, 1) = pair; %#ok<AGROW>
+end
+isComplete = true;
 end
 
 
@@ -502,19 +552,50 @@ assert(numel(destinations) == numel(unique(destinations)), ...
 end
 
 
-function identifiers = fmapIdentifiersForScan(fmapPairs, scanIndex)
-identifiers = {fmapPairs([fmapPairs.scanIndex] == scanIndex).identifier};
+function identifiers = fmapIdentifiersForBold(fmapPairs, boldSeries)
+sameScan = [fmapPairs.scanIndex] == boldSeries.scanIndex;
+scopes = string({fmapPairs.boldScope});
+if strcmp(boldSeries.taskName, 'rest')
+    matchesBold = scopes == "all" | scopes == "rest";
+else
+    matchesBold = scopes == "all" | scopes == "task";
+end
+identifiers = {fmapPairs(sameScan & matchesBold).identifier};
 end
 
 
-function targets = boldTargetsForScan(series, scanIndex, subjectPrefix)
+function targets = boldTargetsForPair(series, pair, subjectPrefix)
 indices = find(strcmp({series.kind}, 'bold') & [series.selected] & ...
-    [series.scanIndex] == scanIndex);
+    [series.scanIndex] == pair.scanIndex);
+if strcmp(pair.boldScope, 'rest')
+    indices = indices(strcmp({series(indices).taskName}, 'rest'));
+elseif strcmp(pair.boldScope, 'task')
+    indices = indices(~strcmp({series(indices).taskName}, 'rest'));
+end
 targets = cell(1, numel(indices));
 for item = 1:numel(indices)
     targets{item} = bidsUri(subjectPrefix, ...
         series(indices(item)).bidsImageRelative);
 end
+end
+
+
+function [series, pairs] = dropFailedFieldmapPairs(series, pairs, subjectPrefix)
+%DROPFAILEDFIELDMAPPAIRS Omit both directions when either conversion failed.
+
+keep = true(size(pairs));
+for pairIndex = 1:numel(pairs)
+    pairSeries = [pairs(pairIndex).apSeriesIndex, ...
+        pairs(pairIndex).paSeriesIndex];
+    if ~all([series(pairSeries).selected])
+        warning('DICOM2BIDS:IncompleteConvertedFieldmapPair', ...
+            '%s omitted fieldmap pair %d because one direction failed.', ...
+            subjectPrefix, pairIndex);
+        [series(pairSeries).selected] = deal(false);
+        keep(pairIndex) = false;
+    end
+end
+pairs = pairs(keep);
 end
 
 
@@ -632,7 +713,7 @@ function [imagePath, jsonPath, bvecPath, bvalPath] = convertOneSeries( ...
     dcm2niix, sourcePath, conversionDir)
 mkdir(conversionDir);
 
-command = sprintf('"%s" -f converted -i y -z y -w 2 -o "%s" "%s"', ...
+command = sprintf('"%s" -f converted -i n -z y -w 2 -o "%s" "%s"', ...
     dcm2niix, conversionDir, sourcePath);
 [status, output] = system(command);
 assert(status == 0, 'dcm2niix failed for %s:\n%s', sourcePath, output);
@@ -830,7 +911,7 @@ end
 
 
 function events = buildEventsTable(csvPath, task)
-psych = readtable(csvPath);
+psych = readtable(csvPath, 'VariableNamingRule', 'preserve');
 mriStartTime = psych.MRI_Signal_s_started(1) + ...
     psych.MRI_Signal_s_rt(1);
 psych(isnan(psych.Trial_fix_started), :) = [];
@@ -847,8 +928,9 @@ events.value = psych.key_resp_corr;
 
 switch task
     case "sst"
+        badColumn = originalColumnName(psych, 'bad', csvPath);
         events.trial_type(:) = "stop";
-        events.trial_type(strcmp(psych.bad, 'None')) = "go";
+        events.trial_type(strcmp(string(psych.(badColumn)), 'None')) = "go";
     case "nback"
         events.trial_type(:) = "2back";
         events.trial_type(contains(psych.Trial_loop_list, '0back')) = "0back";
@@ -857,4 +939,17 @@ switch task
         events.trial_type(contains( ...
             psych.Trial_loop_list, 'nonswitch')) = "nonswitch";
 end
+end
+
+
+function columnName = originalColumnName(inputTable, expectedName, csvPath)
+%ORIGINALCOLUMNNAME Match a required CSV column without MATLAB renaming it.
+
+names = string(inputTable.Properties.VariableNames);
+normalized = lower(strtrim(erase(names, char(65279))));
+matches = find(normalized == lower(string(expectedName)));
+assert(isscalar(matches), ...
+    'Expected exactly one %s column in %s; available columns: %s', ...
+    expectedName, csvPath, strjoin(cellstr(names), ', '));
+columnName = char(names(matches));
 end

@@ -42,16 +42,23 @@ Upload `series_folders.jsonl` and ask:
 ## Checked DICOM to BIDS conversion
 
 `dicom2bids_checked.m` is the one-session conversion entry for one participant.
-It discovers scan containers directly below `MRIdata`, resolves supported BOLD
-rescans before conversion, keeps only a unique Prescan Normalize T1, excludes
-derived DWI folders, pairs complete AP/PA fieldmaps, and assigns fieldmap runs
-by acquisition time. It refuses unresolved duplicates and existing subject
-output directories instead of overwriting them.
+It discovers scan containers below `MRIdata`, resolves supported BOLD rescans
+before conversion, excludes derived DWI folders, pairs complete AP/PA
+fieldmaps, and assigns fieldmap runs by acquisition time. It refuses existing
+subject output directories instead of overwriting them.
 
-Repeated T2, main DWI, and DWI B0 series are resolved by keeping the series
-with the most DICOM files and then the latest acquisition time. When multiple
-event CSV files match one retained task, the timestamp in the filename selects
-the latest file.
+Repeated Prescan Normalize T1, T2, main DWI, and DWI B0 series are resolved by
+keeping the series with the most DICOM files and then the latest acquisition
+time. A repeated rest run prefers the latest 180-volume candidate. If no
+180-volume candidate exists, the latest available run is retained with a
+warning. When multiple event CSV files match one retained task, the timestamp
+in the filename selects the latest file.
+
+Within one scan container, fieldmaps with the largest DICOM file count are
+treated as complete. If only the regular or `_TASK` AP/PA pair is complete,
+that pair is linked to every retained BOLD run in the scan. If both are
+complete, the regular pair is linked only to rest BOLD and the `_TASK` pair
+only to task BOLD. Incomplete fieldmaps are omitted with a warning.
 
 DWI B0 selection is restricted to the source scan containing the retained main
 DWI. Conversion stops if that scan has no DWI B0 series. This rule governs the
@@ -69,6 +76,14 @@ are unchanged, and all name text after the numeric ID is excluded.
 Auxiliary and unsupported folders are classified by name and skipped before
 DICOM inspection. Empty `LOCALIZER*` or `PHOENIXZIPREPORT*` directories do not
 stop subject conversion.
+
+Selected series are passed to `dcm2niix` without its derived/2D-image ignore
+filter because selection has already been performed explicitly. A conversion
+failure skips only that series with a warning. If one direction of a functional
+fieldmap pair fails, both directions of that pair are omitted. SST event CSV
+headers are preserved, and the required `bad` column is matched
+case-insensitively after removing surrounding whitespace and a possible byte
+order mark.
 
 The batch entry point uses the project-specific paths and worker count written
 at the top of the script. Run it from MATLAB without arguments:
