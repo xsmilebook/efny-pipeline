@@ -109,17 +109,19 @@ run_dicom2bids_checked
 Subjects run in parallel with errors isolated per subject. A failed subject
 emits a warning while the remaining subjects continue.
 
-To rebuild only task events for an existing BIDS dataset, set `bidsFolder` and
-`rawFolder` at the top of `rerun_bids_events.m`, then run:
+The conversion and event-rebuild workflows require only
+`dicom2bids_checked.m` and `run_dicom2bids_checked.m`. Set `operation` at the
+top of the runner to `"convert"` for full DICOM conversion or `"events"` to
+rebuild task events, then run:
 
 ```matlab
-addpath('D:\projects\efny-pipeline\scripts\neuroimaging');
-rerun_bids_events
+run_dicom2bids_checked
 ```
 
-The script first validates every required BIDS-to-raw subject mapping. It then
-deletes only the converter-owned `sst`, `nback`, and `switch` task-level event
-TSVs and regenerates events for task BOLD files present in each BIDS subject.
-It does not modify images or events from other tasks.
+In `"events"` mode, the runner first validates the mapping from every BIDS
+subject folder to exactly one raw subject folder. The main function then deletes
+only the converter-owned `sst`, `nback`, and `switch` task-level event TSVs and
+regenerates events for task BOLD files present in each BIDS subject. It does not
+modify images or events from other tasks.
 
 The conversion does not use the inventory CSV as input.
