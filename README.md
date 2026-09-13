@@ -52,7 +52,9 @@ keeping the series with the most DICOM files and then the latest acquisition
 time. A repeated rest run prefers the latest 180-volume candidate. If no
 180-volume candidate exists, the latest available run is retained with a
 warning. When multiple event CSV files match one retained task, the timestamp
-in the filename selects the latest file.
+in the filename selects the latest file. PsychoPy task names are recognized
+only as underscore-delimited `_SST_`, `_nback_`, or `_switch_` filename tokens.
+Timestamps with or without milliseconds are accepted.
 
 Within one scan container, fieldmaps with the largest DICOM file count are
 treated as complete. If only the regular or `_TASK` AP/PA pair is complete,
@@ -106,5 +108,18 @@ run_dicom2bids_checked
 
 Subjects run in parallel with errors isolated per subject. A failed subject
 emits a warning while the remaining subjects continue.
+
+To rebuild only task events for an existing BIDS dataset, set `bidsFolder` and
+`rawFolder` at the top of `rerun_bids_events.m`, then run:
+
+```matlab
+addpath('D:\projects\efny-pipeline\scripts\neuroimaging');
+rerun_bids_events
+```
+
+The script first validates every required BIDS-to-raw subject mapping. It then
+deletes only the converter-owned `sst`, `nback`, and `switch` task-level event
+TSVs and regenerates events for task BOLD files present in each BIDS subject.
+It does not modify images or events from other tasks.
 
 The conversion does not use the inventory CSV as input.
