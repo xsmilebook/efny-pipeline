@@ -1,17 +1,9 @@
 function dicom2bids_checked(sourceFolderName, dcm2niix, ...
-    niftiFolder, bidsFolder, rawFolder, operation)
-%DICOM2BIDS_CHECKED Convert imaging or rebuild events for one participant.
+    niftiFolder, bidsFolder, rawFolder)
+%DICOM2BIDS_CHECKED Convert imaging and task events for one participant.
 %
 % All source scan containers are merged into one BIDS session. Source scan
 % identity is retained internally for rescan selection and fieldmap linkage.
-% Set operation to "events" to delete and rebuild only supported task events.
-
-if nargin < 6
-    operation = "convert";
-end
-operation = lower(string(operation));
-assert(isscalar(operation) && any(operation == ["convert", "events"]), ...
-    'Operation must be "convert" or "events".');
 
 sourceFolderName = char(string(sourceFolderName));
 subjectParts = regexpi(sourceFolderName, ...
@@ -25,23 +17,6 @@ subjectRawDir = fullfile(rawFolder, sourceFolderName);
 dicomRoot = fullfile(subjectRawDir, 'MRIdata');
 psychDir = fullfile(subjectRawDir, 'PSYCH');
 bidsSubjectDir = fullfile(bidsFolder, subjectPrefix);
-
-if operation == "events"
-    assert(isfolder(bidsSubjectDir), ...
-        'Missing BIDS subject folder: %s', bidsSubjectDir);
-    keptTasks = retainedEventTasks(bidsSubjectDir, subjectPrefix);
-    if ~isempty(keptTasks)
-        assert(isfolder(psychDir), ...
-            '%s has task BOLD data but no PSYCH folder: %s', ...
-            subjectPrefix, psychDir);
-    end
-    deletedCount = deleteOwnedEvents(bidsSubjectDir, subjectPrefix);
-    writtenTasks = writeEvents( ...
-        psychDir, bidsSubjectDir, subjectPrefix, keptTasks);
-    fprintf('%s: deleted %d event file(s), wrote %d task(s).\n', ...
-        subjectPrefix, deletedCount, numel(writtenTasks));
-    return;
-end
 
 assert(isfolder(dicomRoot), 'Missing MRIdata folder: %s', dicomRoot);
 
@@ -943,50 +918,7 @@ assert(success, 'Failed to copy %s to %s: %s', source, destination, message);
 end
 
 
-function tasks = retainedEventTasks(bidsSubjectDir, subjectPrefix)
-%RETAINEDEVENTTASKS Find supported task BOLD files already present in BIDS.
-
-supportedTasks = ["sst", "nback", "switch"];
-funcDir = fullfile(bidsSubjectDir, 'func');
-tasks = strings(0, 1);
-if ~isfolder(funcDir)
-    return;
-end
-
-boldFiles = [dir(fullfile(funcDir, '*_bold.nii')); ...
-    dir(fullfile(funcDir, '*_bold.nii.gz'))];
-for task = reshape(supportedTasks, 1, [])
-    prefix = sprintf('%s_task-%s', subjectPrefix, task);
-    matches = startsWith(string({boldFiles.name}), string(prefix) + "_") & ...
-        endsWith(string({boldFiles.name}), ["_bold.nii", "_bold.nii.gz"]);
-    assert(sum(matches) <= 1, ...
-        ['%s has multiple BOLD files for task %s; one task-level event ', ...
-         'file would be ambiguous.'], subjectPrefix, task);
-    if any(matches)
-        tasks(end + 1, 1) = task; %#ok<AGROW>
-    end
-end
-end
-
-
-function deletedCount = deleteOwnedEvents(bidsSubjectDir, subjectPrefix)
-%DELETEOWNEDEVENTS Delete only event files produced by this converter.
-
-supportedTasks = ["sst", "nback", "switch"];
-deletedCount = 0;
-for task = reshape(supportedTasks, 1, [])
-    eventPath = fullfile(bidsSubjectDir, 'func', ...
-        sprintf('%s_task-%s_events.tsv', subjectPrefix, task));
-    if isfile(eventPath)
-        delete(eventPath);
-        deletedCount = deletedCount + 1;
-    end
-end
-end
-
-
-function writtenTasks = writeEvents( ...
-    psychDir, bidsSubjectDir, subjectPrefix, keptTasks)
+function writeEvents(psychDir, bidsSubjectDir, subjectPrefix, keptTasks)
 %WRITEEVENTS Convert supported PsychoPy CSV files to BIDS events.
 %
 % keptTasks lists the task BOLD acquisitions retained for one participant.
@@ -998,7 +930,6 @@ assert(all(ismember(keptTasks, supportedTasks)), ...
     'Unsupported event task requested for %s: %s', ...
     subjectPrefix, strjoin(cellstr(keptTasks), ', '));
 
-writtenTasks = strings(0, 1);
 if isempty(keptTasks)
     return;
 end
@@ -1028,7 +959,6 @@ for task = reshape(keptTasks, 1, [])
         outputPath = fullfile(bidsSubjectDir, 'func', ...
             sprintf('%s_task-%s_events.tsv', subjectPrefix, task));
         writetable(events, outputPath, 'FileType', 'text', 'Delimiter', '\t');
-        writtenTasks(end + 1, 1) = task; %#ok<AGROW>
     catch exception
         if isempty(csvPath)
             sourceDescription = strjoin({csvFiles(matches).name}, ' | ');

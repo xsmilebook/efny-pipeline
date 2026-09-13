@@ -109,19 +109,9 @@ run_dicom2bids_checked
 Subjects run in parallel with errors isolated per subject. A failed subject
 emits a warning while the remaining subjects continue.
 
-The conversion and event-rebuild workflows require only
-`dicom2bids_checked.m` and `run_dicom2bids_checked.m`. Set `operation` at the
-top of the runner to `"convert"` for full DICOM conversion or `"events"` to
-rebuild task events, then run:
-
-```matlab
-run_dicom2bids_checked
-```
-
-In `"events"` mode, the runner first validates the mapping from every BIDS
-subject folder to exactly one raw subject folder. The main function then deletes
-only the converter-owned `sst`, `nback`, and `switch` task-level event TSVs and
-regenerates events for task BOLD files present in each BIDS subject. It does not
-modify images or events from other tasks.
+The complete imaging and PsychoPy event conversion requires only
+`dicom2bids_checked.m` and `run_dicom2bids_checked.m`. The runner adds its own
+directory to the MATLAB path, so these two files can be copied together to a
+different conversion environment after updating the project-specific paths.
 
 The conversion does not use the inventory CSV as input.
