@@ -952,7 +952,7 @@ for task = reshape(keptTasks, 1, [])
 
     csvPath = '';
     try
-        csvFile = chooseLatestEventCsv( ...
+        csvFile = chooseEventCsv( ...
             csvFiles(matches), subjectPrefix, task);
         csvPath = fullfile(csvFile.folder, csvFile.name);
         events = buildEventsTable(csvPath, task);
@@ -990,27 +990,41 @@ end
 end
 
 
-function csvFile = chooseLatestEventCsv(csvFiles, subjectPrefix, task)
-%CHOOSELATESTEVENTCSV Select the latest timestamp encoded in the filename.
+function csvFile = chooseEventCsv(csvFiles, subjectPrefix, task)
+%CHOOSEEVENTCSV Prefer the most data rows, then the latest filename time.
 
 if isscalar(csvFiles)
     csvFile = csvFiles;
     return;
 end
 
-timeKeys = nan(numel(csvFiles), 1);
+rowCounts = zeros(numel(csvFiles), 1);
 for index = 1:numel(csvFiles)
-    timeKeys(index) = eventFileTimeKey(csvFiles(index).name);
+    csvPath = fullfile(csvFiles(index).folder, csvFiles(index).name);
+    inputTable = readtable(csvPath, 'VariableNamingRule', 'preserve');
+    rowCounts(index) = height(inputTable);
+end
+longest = find(rowCounts == max(rowCounts));
+if isscalar(longest)
+    csvFile = csvFiles(longest);
+    return;
+end
+
+timeKeys = nan(numel(longest), 1);
+for index = 1:numel(longest)
+    timeKeys(index) = eventFileTimeKey(csvFiles(longest(index)).name);
 end
 assert(all(isfinite(timeKeys)), ...
-    ['%s has multiple event CSV files for task %s, but at least one ', ...
-     'filename has no recognized timestamp.'], subjectPrefix, task);
+    ['%s has multiple event CSV files with %d data rows for task %s, ', ...
+     'but at least one filename has no recognized timestamp.'], ...
+    subjectPrefix, rowCounts(longest(1)), task);
 
 latest = find(timeKeys == max(timeKeys));
 assert(isscalar(latest), ...
-    '%s has event CSV files with the same latest timestamp for task %s.', ...
-    subjectPrefix, task);
-csvFile = csvFiles(latest);
+    ['%s has event CSV files with %d data rows and the same latest ', ...
+     'timestamp for task %s.'], ...
+    subjectPrefix, rowCounts(longest(1)), task);
+csvFile = csvFiles(longest(latest));
 end
 
 

@@ -51,9 +51,10 @@ Repeated Prescan Normalize T1, T2, main DWI, and DWI B0 series are resolved by
 keeping the series with the most DICOM files and then the latest acquisition
 time. A repeated rest run prefers the latest 180-volume candidate. If no
 180-volume candidate exists, the latest available run is retained with a
-warning. When multiple event CSV files match one retained task, the timestamp
-in the filename selects the latest file. PsychoPy task names are recognized
-only as underscore-delimited `_SST_`, `_nback_`, or `_switch_` filename tokens.
+warning. When multiple event CSV files match one retained task, the file with
+the most data rows is retained; filename timestamps select the latest file only
+when the largest row count is tied. PsychoPy task names are recognized only as
+underscore-delimited `_SST_`, `_nback_`, or `_switch_` filename tokens.
 Timestamps with or without milliseconds are accepted.
 
 Within one scan container, fieldmaps with the largest DICOM file count are
