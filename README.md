@@ -116,3 +116,29 @@ directory to the MATLAB path, so these two files can be copied together to a
 different conversion environment after updating the project-specific paths.
 
 The conversion does not use the inventory CSV as input.
+
+## PsychoPy-only BIDS event replacement
+
+`psychopy2bids_checked.m` builds a standalone BIDS events-only dataset for
+replacing event files without retransferring imaging data. Call it with the raw
+participant root, a dedicated output BIDS root, and the same source-folder list
+used by the DICOM conversion:
+
+```matlab
+addpath('D:\projects\efny-pipeline\scripts\neuroimaging');
+psychopy2bids_checked( ...
+    'D:\Raw_trans', ...
+    'D:\BIDS_transfer\BIDS_EVENTS', ...
+    'D:\BIDS_transfer\raw\sublist.txt');
+```
+
+The output root contains the required `dataset_description.json`; each subject
+directory contains only `func/*_events.tsv` and matching JSON sidecars. For each
+SST, n-back, or switch task, multiple PsychoPy CSV files are resolved by keeping
+the file with the most data rows and then the latest filename timestamp when
+row counts tie. Existing output event files are overwritten, and the BIDS names
+match the full converter so the generated subject directories can replace old
+event files in the cluster dataset. When merging the replacement into the
+cluster dataset, transfer the `sub-*` directories with overwrite enabled; do
+not replace the cluster dataset's root `dataset_description.json` with the
+minimal validation metadata from this replacement package.
