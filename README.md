@@ -97,7 +97,9 @@ original dotted headers, with the underscore form accepted for older exports.
 Before event calculation, the task-specific required columns are checked as one
 schema. A failure in event-file selection, schema validation, conversion, or
 writing skips only that task's events with a warning and does not fail the
-participant's converted imaging data.
+participant's converted imaging data. Missing duration, response-time, and
+accuracy values are written as the BIDS `n/a` marker; negative durations and
+non-finite values other than missing data are rejected.
 
 The batch entry point uses the project-specific paths and worker count written
 at the top of the script. Run it from MATLAB without arguments:

@@ -956,6 +956,7 @@ for task = reshape(keptTasks, 1, [])
             csvFiles(matches), subjectPrefix, task);
         csvPath = fullfile(csvFile.folder, csvFile.name);
         events = buildEventsTable(csvPath, task);
+        events = prepareEventsForBids(events, csvPath);
         outputPath = fullfile(bidsSubjectDir, 'func', ...
             sprintf('%s_task-%s_events.tsv', subjectPrefix, task));
         writetable(events, outputPath, 'FileType', 'text', 'Delimiter', '\t');
@@ -1087,6 +1088,35 @@ switch task
             string(psych.(columns.trialLoopList)), ...
             'nonswitch')) = "nonswitch";
 end
+end
+
+
+function events = prepareEventsForBids(events, csvPath)
+%PREPAREEVENTSFORBIDS Enforce event invariants and encode missing values.
+
+assert(all(isfinite(events.onset)), ...
+    'Non-finite event onset in %s', csvPath);
+assert(all((isfinite(events.duration) & events.duration >= 0) | ...
+    isnan(events.duration)), ...
+    'Invalid event duration in %s', csvPath);
+assert(~any(ismissing(events.trial_type)), ...
+    'Missing trial_type in %s', csvPath);
+assert(all(isfinite(events.response_time) | isnan(events.response_time)), ...
+    'Infinite response_time in %s', csvPath);
+assert(all(isfinite(events.value) | isnan(events.value)), ...
+    'Infinite response value in %s', csvPath);
+
+events.duration = numericToBidsText(events.duration);
+events.response_time = numericToBidsText(events.response_time);
+events.value = numericToBidsText(events.value);
+end
+
+
+function text = numericToBidsText(values)
+%NUMERICTOBIDSTEXT Encode missing numeric values with the BIDS n/a marker.
+
+text = string(compose('%.15g', values));
+text(isnan(values)) = "n/a";
 end
 
 
