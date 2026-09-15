@@ -88,7 +88,10 @@ junction. If the source location does not support junctions, the series is
 copied to a short local temporary directory with sequential file names. These
 temporary inputs are isolated across parallel workers and removed when the
 series conversion finishes or raises an error. A conversion failure skips only
-that series with a warning. If one
+that series with a warning. If a converted BOLD NIfTI has a different volume
+count from the source DICOM file count, the converter reports a
+`DICOM2BIDS:BoldVolumeMismatch` warning and continues with the converted NIfTI.
+If one
 direction of a functional fieldmap pair fails, both directions of that pair are
 omitted. SST event CSV headers are preserved, and the required `bad` column is
 matched case-insensitively after removing surrounding whitespace and a possible
