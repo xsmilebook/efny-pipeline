@@ -62,6 +62,10 @@ treated as complete. If only the regular or `_TASK` AP/PA pair is complete,
 that pair is linked to every retained BOLD run in the scan. If both are
 complete, the regular pair is linked only to rest BOLD and the `_TASK` pair
 only to task BOLD. Incomplete fieldmaps are omitted with a warning.
+If the retained pair's converted JSON files report non-opposing
+`PhaseEncodingDirection` values, the converter emits a
+`DICOM2BIDS:NonOpposingPhaseEncoding` warning and continues writing the
+generated NIfTI and JSON files to BIDS.
 
 DWI B0 selection is restricted to the source scan containing the retained main
 DWI. Conversion stops if that scan has no DWI B0 series. This rule governs the
