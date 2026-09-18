@@ -58,10 +58,14 @@ underscore-delimited `_SST_`, `_nback_`, or `_switch_` filename tokens.
 Timestamps with or without milliseconds are accepted.
 
 Within one scan container, fieldmaps with the largest DICOM file count are
-treated as complete. If only the regular or `_TASK` AP/PA pair is complete,
-that pair is linked to every retained BOLD run in the scan. If both are
-complete, the regular pair is linked only to rest BOLD and the `_TASK` pair
-only to task BOLD. Incomplete fieldmaps are omitted with a warning.
+treated as complete. Regular and `_TASK` AP/PA candidates are paired in
+`SeriesNumber` order. Each retained BOLD run is linked to exactly one complete
+pair in the same scan: the pair whose larger AP/PA `SeriesNumber` is the
+largest value still below the BOLD `SeriesNumber`. For example, fieldmap
+series 5/6 precede and are assigned to BOLD series 7, while fieldmap series
+10/11 are assigned to BOLD series 12. Conversion stops if any retained BOLD
+has no preceding complete pair. Incomplete fieldmaps are omitted with a
+warning.
 If the retained pair's converted JSON files report non-opposing
 `PhaseEncodingDirection` values, the converter emits a
 `DICOM2BIDS:NonOpposingPhaseEncoding` warning and continues writing the
@@ -97,7 +101,8 @@ count from the source DICOM file count, the converter reports a
 `DICOM2BIDS:BoldVolumeMismatch` warning and continues with the converted NIfTI.
 If one
 direction of a functional fieldmap pair fails, both directions of that pair are
-omitted. SST event CSV headers are preserved, and the required `bad` column is
+omitted; conversion then stops if that removal leaves any retained BOLD without
+exactly one fieldmap pair. SST event CSV headers are preserved, and the required `bad` column is
 matched case-insensitively after removing surrounding whitespace and a possible
 byte order mark. All required PsychoPy component fields are resolved from their
 original dotted headers, with the underscore form accepted for older exports.

@@ -68,6 +68,7 @@ for index = reshape(selectedIndices, 1, [])
 end
 
 [series, fmapPairs] = dropFailedFieldmapPairs(series, fmapPairs, subjectPrefix);
+validateBoldFieldmapAssignments(series, fmapPairs, subjectPrefix);
 validateConvertedFieldmapPairs(series, fmapPairs);
 
 selectedIndices = find([series.selected]);
@@ -77,7 +78,7 @@ for index = reshape(selectedIndices, 1, [])
     switch series(index).kind
         case 'bold'
             metadata.TaskName = series(index).taskName;
-            identifiers = fmapIdentifiersForBold(fmapPairs, series(index));
+            identifiers = fmapIdentifiersForBold(fmapPairs, index);
             metadata = setOrRemoveField(metadata, 'B0FieldSource', identifiers);
 
         case 'fmap'
@@ -385,7 +386,7 @@ end
 function [series, pairs] = selectFieldmapPairs(series, scanGroups, subjectPrefix)
 pairTemplate = struct('scanIndex', 0, 'apSeriesIndex', 0, ...
     'paSeriesIndex', 0, 'acquisitionKey', NaN, 'run', 0, ...
-    'identifier', '', 'boldScope', 'all');
+    'identifier', '', 'boldSeriesIndices', []);
 pairs = repmat(pairTemplate, 0, 1);
 
 for scanIndex = 1:numel(scanGroups)
@@ -403,15 +404,13 @@ for scanIndex = 1:numel(scanGroups)
         series, indices(taskMarked), scanIndex, maximumFiles, pairTemplate);
 
     if regularComplete && taskComplete
-        [regularPairs.boldScope] = deal('rest');
-        [taskPairs.boldScope] = deal('task');
         scanPairs = [regularPairs; taskPairs];
     elseif regularComplete
         scanPairs = regularPairs;
         if any(taskMarked)
             warning('DICOM2BIDS:IncompleteTaskFieldmap', ...
                 ['%s ignored incomplete _TASK fieldmaps and retained the ', ...
-                 'regular fieldmap for all BOLD runs: %s'], ...
+                 'regular fieldmap for sequence-based BOLD assignment: %s'], ...
                 subjectPrefix, scanGroups(scanIndex).relativePath);
         end
     elseif taskComplete
@@ -419,7 +418,7 @@ for scanIndex = 1:numel(scanGroups)
         if any(~taskMarked)
             warning('DICOM2BIDS:IncompleteRegularFieldmap', ...
                 ['%s ignored incomplete regular fieldmaps and retained the ', ...
-                 '_TASK fieldmap for all BOLD runs: %s'], ...
+                 '_TASK fieldmap for sequence-based BOLD assignment: %s'], ...
                 subjectPrefix, scanGroups(scanIndex).relativePath);
         end
     else
@@ -432,14 +431,12 @@ for scanIndex = 1:numel(scanGroups)
     pairs = [pairs; scanPairs]; %#ok<AGROW>
 end
 
-if isempty(pairs)
-    return;
+if ~isempty(pairs)
+    sortMatrix = [[pairs.acquisitionKey]', ...
+        [series([pairs.apSeriesIndex]).seriesNumber]'];
+    [~, order] = sortrows(sortMatrix, [1, 2]);
+    pairs = pairs(order);
 end
-
-sortMatrix = [[pairs.acquisitionKey]', ...
-    [series([pairs.apSeriesIndex]).seriesNumber]'];
-[~, order] = sortrows(sortMatrix, [1, 2]);
-pairs = pairs(order);
 
 for run = 1:numel(pairs)
     pairs(run).run = run;
@@ -450,6 +447,7 @@ for run = 1:numel(pairs)
         series(index).fmapRun = run;
     end
 end
+pairs = assignBoldToFieldmapPairs(series, pairs, subjectPrefix);
 end
 
 
@@ -470,8 +468,10 @@ if isempty(apIndices) || numel(apIndices) ~= numel(paIndices)
     return;
 end
 
-apIndices = sortSeriesByTime(series, apIndices);
-paIndices = sortSeriesByTime(series, paIndices);
+[~, apOrder] = sort([series(apIndices).seriesNumber]);
+[~, paOrder] = sort([series(paIndices).seriesNumber]);
+apIndices = apIndices(apOrder);
+paIndices = paIndices(paOrder);
 for pairIndex = 1:numel(apIndices)
     pair = pairTemplate;
     pair.scanIndex = scanIndex;
@@ -499,14 +499,6 @@ if isequal(sortedValues(end, :), sortedValues(end - 1, :))
     error('Cannot determine the latest series for %s.', description);
 end
 chosen = indices(order(end));
-end
-
-
-function indices = sortSeriesByTime(series, indices)
-sortMatrix = [[series(indices).acquisitionKey]', ...
-    [series(indices).seriesNumber]'];
-[~, order] = sortrows(sortMatrix, [1, 2]);
-indices = indices(order);
 end
 
 
@@ -557,26 +549,45 @@ assert(numel(destinations) == numel(unique(destinations)), ...
 end
 
 
-function identifiers = fmapIdentifiersForBold(fmapPairs, boldSeries)
-sameScan = [fmapPairs.scanIndex] == boldSeries.scanIndex;
-scopes = string({fmapPairs.boldScope});
-if strcmp(boldSeries.taskName, 'rest')
-    matchesBold = scopes == "all" | scopes == "rest";
-else
-    matchesBold = scopes == "all" | scopes == "task";
+function pairs = assignBoldToFieldmapPairs(series, pairs, subjectPrefix)
+%ASSIGNBOLDTOFIELDMAPPAIRS Use the nearest preceding pair in each scan.
+
+boldIndices = find(strcmp({series.kind}, 'bold') & [series.selected]);
+for boldIndex = reshape(boldIndices, 1, [])
+    sameScan = find([pairs.scanIndex] == series(boldIndex).scanIndex);
+    pairSeriesNumbers = arrayfun(@(pairIndex) max([ ...
+        series(pairs(pairIndex).apSeriesIndex).seriesNumber, ...
+        series(pairs(pairIndex).paSeriesIndex).seriesNumber]), sameScan);
+    preceding = sameScan(pairSeriesNumbers < series(boldIndex).seriesNumber);
+    precedingNumbers = pairSeriesNumbers( ...
+        pairSeriesNumbers < series(boldIndex).seriesNumber);
+
+    assert(~isempty(preceding), ...
+        ['%s BOLD series %s (SeriesNumber %g) has no preceding complete ', ...
+         'AP/PA fieldmap pair in the same scan.'], ...
+        subjectPrefix, series(boldIndex).path, series(boldIndex).seriesNumber);
+    nearestNumber = max(precedingNumbers);
+    nearest = preceding(precedingNumbers == nearestNumber);
+    assert(isscalar(nearest), ...
+        ['%s BOLD series %s (SeriesNumber %g) has multiple preceding ', ...
+         'fieldmap pairs ending at SeriesNumber %g.'], ...
+        subjectPrefix, series(boldIndex).path, series(boldIndex).seriesNumber, ...
+        nearestNumber);
+    pairs(nearest).boldSeriesIndices(end + 1) = boldIndex;
 end
-identifiers = {fmapPairs(sameScan & matchesBold).identifier};
+end
+
+
+function identifiers = fmapIdentifiersForBold(fmapPairs, boldSeriesIndex)
+matchesBold = arrayfun(@(pair) ...
+    any(pair.boldSeriesIndices == boldSeriesIndex), fmapPairs);
+identifiers = {fmapPairs(matchesBold).identifier};
 end
 
 
 function targets = boldTargetsForPair(series, pair, subjectPrefix)
-indices = find(strcmp({series.kind}, 'bold') & [series.selected] & ...
-    [series.scanIndex] == pair.scanIndex);
-if strcmp(pair.boldScope, 'rest')
-    indices = indices(strcmp({series(indices).taskName}, 'rest'));
-elseif strcmp(pair.boldScope, 'task')
-    indices = indices(~strcmp({series(indices).taskName}, 'rest'));
-end
+indices = pair.boldSeriesIndices;
+indices = indices([series(indices).selected]);
 targets = cell(1, numel(indices));
 for item = 1:numel(indices)
     targets{item} = bidsUri(subjectPrefix, ...
@@ -601,6 +612,22 @@ for pairIndex = 1:numel(pairs)
     end
 end
 pairs = pairs(keep);
+end
+
+
+function validateBoldFieldmapAssignments(series, pairs, subjectPrefix)
+%VALIDATEBOLDFIELDMAPASSIGNMENTS Require exactly one retained pair per BOLD.
+
+boldIndices = find(strcmp({series.kind}, 'bold') & [series.selected]);
+for boldIndex = reshape(boldIndices, 1, [])
+    matches = arrayfun(@(pair) ...
+        any(pair.boldSeriesIndices == boldIndex), pairs);
+    assert(nnz(matches) == 1, ...
+        ['%s BOLD series %s (SeriesNumber %g) is indexed by %d retained ', ...
+         'fieldmap pairs; expected exactly one.'], ...
+        subjectPrefix, series(boldIndex).path, series(boldIndex).seriesNumber, ...
+        nnz(matches));
+end
 end
 
 
