@@ -83,3 +83,36 @@
 - 更新统一配置与当前方法／路径说明，所有影像生产模块及其读取端共同改用新根目录。
   原根目录仅保留历史来源记录，不再作为正式结果路径；不复制虚拟环境或数据。
 - 新根目录的已有代码工作区干净，版本为 `470d55e`，通过 Git 快进更新后建立独立环境。
+
+统一路径的代码提交为 `d5d4325`，本地 14 项定向验证和四份 sbatch Bash 语法检查通过，
+无残留 `temp/smoke_*`。新检出已快进到该版本，通过 uv 建立独立 `.venv`，
+依赖兼容检查及 NumPy／NiBabel 导入通过。新目录重新生成 745 人、2483 个 run 清单，
+提交预览确认全部使用新根目录、q_fat_c 和 6 CPU。
+
+已核对上述 5 个失败作业均因没有 T1w，分别为：`sub-THU202401070165`、
+`sub-THU202401210184`、`sub-THU202401260204`、`sub-THU202401270213`、
+`sub-THU202401280219`。新根目录的 `previous_failed_subjects_20261006.csv` 保存其来源；
+这些被试仍在本次提交名单中，缺失输入可能导致再次失败。
+
+## 新根目录的重新提交结果
+
+- 在队列确认没有活动 fMRIPrep 作业后，删除原根目录以下自有路径并确认不存在：
+  `data/interim/neuroimaging/fmriprep/THU/`（包括 rest 与 work）、
+  `data/interim/neuroimaging/freesurfer/THU/`、`temp/neuroimaging/fmriprep/THU/`、
+  模块日志下的失效 `locks/`。新根目录当时没有上述结果，不需要迁移或删除。
+- 清理记录 `cleanup_20261006.json` 保存在两份检出的 fMRIPrep 模块日志中。
+  原根目录历史日志与提交清单保留，不同步原始数据或衍生结果。
+- 新批次在集群时间 02:22 提交，共 745 个独立作业，编号 `15215943`–`15216687`。
+  提交时的代码版本为 `d5d4325`，名单与先前用户确认的 745 人完全一致，无重复作业编号。
+- 新根目录中的提交清单：
+  `outputs/logs/neuroimaging/fmriprep/THU/rest/submission_batch_20261006_newroot.csv`。
+  同目录包含正式 `input_scans.csv`、`subjects.txt`、候选／缺失名单、提交预览、
+  逐作业提交记录及 `submission_status_20261006_newroot.json`。
+- 02:22:49 的队列核对为 745／745 个活动作业：91 RUNNING、654 PENDING。
+  逐作业确认 q_fat_c、6 CPU，工作目录均为新根目录；首个作业实际获得 120 GB 内存。
+  刚提交时 Slurm accounting 尚未收齐全部记录，完整活动状态以随后队列快照为准。
+- 首个作业 `15215943` 已通过使用完整挂载的容器版本检查，正式命令确认
+  `--nprocs 6 --omp-nthreads 6`，fMRIPrep、FreeSurfer、工作缓存、临时目录及 stdout／stderr
+  均指向新根目录。不更改科学参数、跳过 BIDS 验证和代理约定。
+- 任务处于运行／等待状态，尚未完成预处理；已知 5 个无 T1w 被试仍可能失败，
+  后续应查看日志处理输入，再进行正式产物审计。未提交 XCP-D、头动或 FC 下游任务。

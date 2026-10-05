@@ -55,7 +55,8 @@ Python 依赖仅新增 NumPy 与 NiBabel。NumPy 固定为 2.2.6，锁文件包�
 - `fmriprep_25.2.5.sif`、`xcp_d-26.0.2.sif`；
 - FreeSurfer `license.txt` 与 TemplateFlow 缓存。
 
-这些路径来自参考项目，本次未在集群核验。提交前在登录节点确认镜像可执行及所需模板已缓存。
+这些路径来自参考项目。2026-10-06 已确认 fMRIPrep 镜像、license 和 TemplateFlow 路径可访问，
+并通过计算节点挂载与版本启动检查；XCP-D 镜像及完整模板／图谱覆盖仍需在该阶段运行时核验。
 fMRIPrep／XCP-D 沿用参考代理 `http://10.11.100.5:3128`，设置宿主 HTTP／HTTPS／FTP／ALL
 大小写代理变量，并通过对应 `SINGULARITYENV_*` 传入 `--cleanenv` 容器，以保留需要时的网络访问。
 本次未核验代理连通性。镜像、Python 依赖及所需模板仍优先在登录节点准备。

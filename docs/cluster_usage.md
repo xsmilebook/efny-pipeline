@@ -4,11 +4,13 @@
 
 本手册参考同一集群的 `personalized_prediction/docs/cluster_usage.md`（本地参考仓库为
 `D:\projects\personalized_prediction`），于 2026-10-06 整理。下列分区、内存和模块信息
-来自该项目既有记录，本次未连接集群核验；首次部署时需确认当前站点配置和可用模块。
+来自该项目既有记录。2026-10-06 已连接 login01，实测 q_fat_c 的 6 CPU 作业配额为 120 GB，
+Singularity 3.7.0 与 fMRIPrep 25.2.5 可启动；其他分区信息仍为参考记录。
 
 本项目包含 MATLAB DICOM/BIDS 转换、Python 序列目录清单，以及静息态 fMRIPrep／XCP-D／
 头动／FC 的 `efny-imaging` 和四个 sbatch 入口，详见[影像流程](neuroimaging_preprocessing.md)。
-尚未完成计算节点验证；现有 Windows MATLAB 转换入口仍需单独调整路径和 worker 数。
+fMRIPrep 已通过计算节点版本启动检查并开始实际 workflow；尚未完成全流程科学产物审计。
+XCP-D 尚未实测，现有 Windows MATLAB 转换入口仍需单独调整路径和 worker 数。
 
 ## 两端开发与路径
 
