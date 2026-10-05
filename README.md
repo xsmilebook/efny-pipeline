@@ -11,11 +11,38 @@ Windows 与 Linux 各自建立仓库根目录 `.venv`，已有依赖清单与锁
 
 现有 MATLAB 批量入口仍使用 Windows 绝对路径，DICOM 转换入口固定使用 4 个 worker。
 集群运行前需针对实际路径、Linux 版 `dcm2niix` 和 Slurm CPU 配额调整入口并进行小规模验证；
-当前尚无本项目的正式 sbatch 入口，也未验证计算节点运行。批量转换和并行任务应提交 Slurm。
-现有 Python 序列目录清单脚本只使用标准库，当前没有 `pyproject.toml` 或 `uv.lock`。
+上述 MATLAB 转换入口尚未验证计算节点运行。批量转换和并行任务应提交 Slurm。
+Python 依赖由 `pyproject.toml`、`uv.lock` 管理；原序列目录清单脚本仍仅使用标准库。
 
 正式运行需记录代码 commit、工作区状态、命令、输入范围与位置、输出位置、软件版本和作业编号。
 下文事件替换的传输说明仅适用于明确要求执行的单次替换，不表示本项目已建立数据同步。
+
+## BIDS 静息态预处理、头动与功能连接
+
+完整方法、路径与分阶段提交命令见[静息态影像流程](docs/neuroimaging_preprocessing.md)。
+统一配置为 [configs/neuroimaging.json](configs/neuroimaging.json)，默认集群项目根目录为
+`/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline`，THU 的只读 BIDS 输入为
+`/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new`。
+XY 保留独立配置，`bids_dir` 当前为空，填写后才能运行。
+
+流程仅支持 `sub-*/func/*_task-rest_run-*_bold.nii[.gz]`，不支持 `ses-*` 或多回波输入。
+默认使用 fMRIPrep 25.2.5、XCP-D 26.0.2／36P／0.01–0.1 Hz 带通且不做逐帧 censoring。
+头动按原始 fMRIPrep FD 计算：数据集内 mean FD ≤ Q3 + 1.5 IQR，FD > 0.3 mm 的帧比例 ≤ 25%，
+至少 2 个合格 run。合格 run 按编号拼接计算 Pearson r 与 Fisher z，图谱为
+4S156Parcels／4S256Parcels／4S456Parcels，包含非皮层节点。
+
+登录节点准备离线 Python 环境后，从集群项目根目录运行：
+
+```bash
+uv run --offline --no-sync efny-imaging prepare --dataset THU
+uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU --dry-run
+uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU
+```
+
+待作业完成并核查产物后，按手册继续提交 XCP-D、头动、QC 和 FC。
+四个作业入口为 `scripts/neuroimaging/run_{fmriprep,xcpd,head_motion,rest_fc}.sbatch`；
+Python 科学计算集中在 `src/imaging/`，由 `efny-imaging` 调用。
+本地合成数据验证不等于集群容器验证，首次正式批量运行前需先提交少量被试。
 
 ## MRI series-folder inventory
 

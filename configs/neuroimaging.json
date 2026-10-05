@@ -1,0 +1,54 @@
+{
+  "project_root": "/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline",
+  "datasets": {
+    "THU": {
+      "bids_dir": "/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new",
+      "subject_prefix": "sub-THU"
+    },
+    "XY": {
+      "bids_dir": null,
+      "subject_prefix": "sub-XY"
+    }
+  },
+  "tools": {
+    "singularity_module": "singularity/3.7.0",
+    "fmriprep_image": "/ibmgpfs/cuizaixu_lab/xuhaoshu/packages/singularity/fmriprep_25.2.5.sif",
+    "xcpd_image": "/ibmgpfs/cuizaixu_lab/xuhaoshu/packages/singularity/xcp_d-26.0.2.sif",
+    "fs_license": "/ibmgpfs/cuizaixu_lab/xuhaoshu/packages/freesurfer_license/license.txt",
+    "templateflow": "/ibmgpfs/cuizaixu_lab/xuhaoshu/packages/templateflow",
+    "atlas_datasets": {}
+  },
+  "slurm": {
+    "partition": "q_fat_c,q_fat",
+    "fmriprep_cpus": 6,
+    "xcpd_cpus": 1,
+    "head_motion_cpus": 1,
+    "rest_fc_cpus": 1
+  },
+  "fmriprep": {
+    "output_spaces": ["T1w", "MNI152NLin2009cAsym", "MNI152NLin6Asym", "fsLR", "fsaverage"],
+    "random_seed": 42
+  },
+  "xcpd": {
+    "dummy_scans": 0,
+    "nuisance_regressors": "36P",
+    "lower_bpf_hz": 0.01,
+    "upper_bpf_hz": 0.1,
+    "bpf_order": 2,
+    "motion_filter_type": "lp",
+    "motion_filter_bpm": 6,
+    "min_coverage": 0,
+    "random_seed": 42
+  },
+  "head_motion": {
+    "fd_threshold_mm": 0.3,
+    "high_motion_ratio_threshold": 0.25,
+    "fd_outlier_scale": 1.5,
+    "min_valid_runs": 2
+  },
+  "atlases": {
+    "4S156Parcels": 156,
+    "4S256Parcels": 256,
+    "4S456Parcels": 456
+  }
+}

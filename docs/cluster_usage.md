@@ -6,8 +6,9 @@
 `D:\projects\personalized_prediction`），于 2026-10-06 整理。下列分区、内存和模块信息
 来自该项目既有记录，本次未连接集群核验；首次部署时需确认当前站点配置和可用模块。
 
-本项目当前主要入口是 MATLAB DICOM/BIDS 转换和 Python 序列目录清单脚本。
-尚无正式 sbatch 入口，也未完成计算节点验证；本手册不表示现有 Windows 入口可直接在集群运行。
+本项目包含 MATLAB DICOM/BIDS 转换、Python 序列目录清单，以及静息态 fMRIPrep／XCP-D／
+头动／FC 的 `efny-imaging` 和四个 sbatch 入口，详见[影像流程](neuroimaging_preprocessing.md)。
+尚未完成计算节点验证；现有 Windows MATLAB 转换入口仍需单独调整路径和 worker 数。
 
 ## 两端开发与路径
 
@@ -17,8 +18,11 @@
   已有的 `pyproject.toml`、`uv.lock` 通过 Git 管理。
 - 数据和结果各端独立管理，当前不配置镜像、双向同步或自动传输。缺少输入时明确停止相关运行，
   不假设另一端已有数据等于当前端已就绪。
-- 本地项目根目录为 `D:\projects\efny-pipeline`。集群项目、原始输入、被试列表、NIfTI、BIDS
-  和事件替换目录尚待部署时确认，不直接套用参考项目的路径。
+- 本地项目根目录为 `D:\projects\efny-pipeline`。集群项目根目录由用户确定为
+  `/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline`；THU BIDS 输入为
+  `/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new`。
+  XY 输入暂未确定，不直接套用 THU 或参考项目的路径。MATLAB 转换的原始输入、NIfTI
+  和事件替换目录仍需单独确认。
 - 沿用已有入口参数或入口顶部的路径设置，明确当前端输入、输出和工具路径。
   数据可以位于仓库外；仓库内输出归属仍遵循 [ARCHITECTURE.md](../ARCHITECTURE.md)。
 
@@ -71,10 +75,10 @@ MATLAB 批处理使用 `-batch`，进程池任务可使用 `-singleCompThread` �
 
 ## Python 环境与离线计算节点
 
-当前 `export_series_folders.py` 仅使用标准库，仓库没有 `pyproject.toml` 或 `uv.lock`。
-可以用 `uv venv .venv` 在两端分别建立环境，再分别使用 Windows 的
-`.venv\Scripts\python.exe` 或 Linux 的 `.venv/bin/python` 执行脚本。
-不为该脚本引入参考项目的统计和绘图依赖；下列锁文件命令仅在项目确实建立依赖清单后适用。
+原有 `export_series_folders.py` 仅使用标准库；新影像流程的 Python 依赖由
+`pyproject.toml` 和 `uv.lock` 管理，包含 NumPy 和 NiBabel，提供 `efny-imaging` 命令。
+Windows 与 Linux 各自运行 `uv sync --frozen` 建立仓库根目录 `.venv`。
+默认 Python 版本为 3.11；本地也可显式使用 `uv sync --frozen --python 3.12`。
 
 参考手册记录的计算节点无网络，使用 Python 3.11 和 glibc 2.17。依赖在有网络的登录节点
 准备，计算节点只读取项目共享文件系统中已准备的 `.venv`，不得运行在线安装或同步。
@@ -96,7 +100,8 @@ uv run --offline --no-sync python scripts/neuroimaging/export_series_folders.py 
 Python 包使用 `uv` 管理，不混用站点 NumPy、pandas 等模块；只有必要的基础运行时使用 module。
 参考手册用 `module load gcc/11.3.0` 解决 `CXXABI_*`／`GLIBCXX_*` 问题，是否加载取决于
 实际依赖。遇到 `GLIBC_*` 不兼容应选择兼容的 wheel，不在作业中替换系统 glibc。
-本项目不继承参考项目的 SciPy、Pillow 或 scikit-learn 固定版本。
+本项目不继承参考项目的 SciPy、Pillow 或 scikit-learn 固定版本。影像作业启动时执行上述
+只读环境检查和 `uv run --offline --no-sync`，不在 Slurm 作业内安装依赖。
 
 ## 验证和正式运行记录
 

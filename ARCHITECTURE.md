@@ -11,17 +11,22 @@ efny-pipeline/                  # 项目根目录
 ├── PLAN.md                     # 计划与任务拆解
 ├── ARCHITECTURE.md             # 结构说明（本文）
 ├── configs/                    # 项目配置文件
+│   └── neuroimaging.json        # THU/XY 影像输入、集群根目录、工具与分析参数
 │
 ├── docs/                       # 方法、流程与决策记录
 │   ├── data_dictionary.md      # 数据字典（数据说明）
 │   ├── workflow.md             # 可复现流程（预留）
 │   ├── cluster_usage.md        # 本地与集群开发、环境和 Slurm 约定
+│   ├── neuroimaging_preprocessing.md # 静息态 fMRIPrep、XCP-D、头动与 FC
 │   ├── methods.md              # 方法学细节
 │   ├── reports/                # 研究计划、阶段性总结与正式文档
 │   └── sessions/               # 会话记录
 │
 ├── src/                        # 可复用模块（不含硬编码路径）
 │   ├── imaging/                # 影像预处理与影像指标提取
+│   │   ├── config.py           # 统一配置与模块输出路径
+│   │   ├── pipeline.py         # 输入清单、容器、Slurm 与完成审计入口
+│   │   └── rest.py             # 头动 QC 与被试级 CIFTI 功能连接
 │   ├── behavior/               # 行为任务与人口学预处理
 │   └── inventory/              # 问卷与量表处理（预留）
 │
@@ -51,7 +56,7 @@ efny-pipeline/                  # 项目根目录
 │   ├── results/                # 模型等非表格结果；按生产模块分目录
 │   └── reports/                # 正式交付附件；继续按报告模块组织
 │
-├── tests/                      # 项目测试脚本（预留）
+├── tests/                      # 合成数据的科学定向验证
 └── notebooks/                  # 探索性分析（不纳入版本控制）
 ```
 
@@ -64,3 +69,25 @@ efny-pipeline/                  # 项目根目录
 `outputs/tables/neuroimaging/series_folder_inventory/`。MATLAB 转换的输入、NIfTI、BIDS
 及事件替换目录由入口显式指定，当前 Windows 示例使用仓库外路径；部署集群时需单独确认。
 `temp/` 仅用于短时开发验证，验证后清理，不纳入版本控制。
+
+## 静息态影像生产模块
+
+集群项目根目录由 `configs/neuroimaging.json` 统一指定，默认
+`/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline`。
+外部 BIDS 根目录按数据集独立配置，只读使用，不复制到 `data/raw/`。
+模块路径由 `src/imaging/config.py` 统一生成，`<dataset>` 为 THU 或 XY。
+
+| 生产模块 | 产物 | 归属路径（相对项目根目录） |
+| --- | --- | --- |
+| fmriprep | BIDS derivatives、HTML 报告 | `data/interim/neuroimaging/fmriprep/<dataset>/rest/` |
+| freesurfer | 解剖重建，由 fMRIPrep 生产 | `data/interim/neuroimaging/freesurfer/<dataset>/` |
+| xcpd | BIDS derivatives、ptseries 与逐 run FC | `data/interim/neuroimaging/xcpd/<dataset>/rest/` |
+| fmriprep／xcpd | 可复用工作目录 | `data/interim/neuroimaging/<module>/<dataset>/work/<subject>/` |
+| head_motion | 被试 FD 表、run／subject QC、阈值表 | `outputs/tables/neuroimaging/head_motion/<dataset>/rest/` |
+| rest_fc | 被试 Pearson r／Fisher z 矩阵 | `data/processed/neuroimaging/rest_fc/<dataset>/rest/<subject>/<atlas>/{raw,fisher_z}/` |
+| rest_fc | 输入 run、帧数与 ROI 来源表 | `outputs/tables/neuroimaging/rest_fc/<dataset>/rest/subjects/` |
+| 各影像模块 | Slurm 日志、完成记录、提交与审计清单 | `outputs/logs/neuroimaging/<module>/<dataset>/rest/` |
+| fmriprep／xcpd | 容器临时目录 | `temp/neuroimaging/<module>/<dataset>/rest/<subject>/<job_id>/` |
+
+正式工作目录和容器临时目录不自动删除，便于诊断与恢复；清理仅限明确完成任务的自有目录。
+本地合成验证另使用 `temp/smoke_neuroimaging_*`，测试结束立即清理。
