@@ -49,7 +49,9 @@ Python 依赖仅新增 NumPy 与 NiBabel。NumPy 固定为 2.2.6，锁文件包�
 - FreeSurfer `license.txt` 与 TemplateFlow 缓存。
 
 这些路径来自参考项目，本次未在集群核验。提交前在登录节点确认镜像可执行及所需模板已缓存。
-作业不设置代理，也不在计算节点下载镜像、模板或 Python 依赖；缺少资源时返回登录节点准备。
+fMRIPrep／XCP-D 沿用参考代理 `http://10.11.100.5:3128`，设置宿主 HTTP／HTTPS／FTP／ALL
+大小写代理变量，并通过对应 `SINGULARITYENV_*` 传入 `--cleanenv` 容器，以保留需要时的网络访问。
+本次未核验代理连通性。镜像、Python 依赖及所需模板仍优先在登录节点准备。
 TemplateFlow 在容器内只读挂载为 `/templateflow`。
 
 XCP-D 26.0.2 默认从镜像中的 `/home/xcp_d/.cache/xcp_d/XCPDAtlases` 与
@@ -57,7 +59,7 @@ XCP-D 26.0.2 默认从镜像中的 `/home/xcp_d/.cache/xcp_d/XCPDAtlases` 与
 独立的 BIDS-Atlas 数据集，在 `tools.atlas_datasets` 中填写 `xcpdatlases` 和 `xcpd4s`
 对应的宿主路径；程序以只读挂载和 `--datasets` 显式传入。
 该行为依据 [XCP-D 26.0.2 参数解析源码](https://github.com/PennLINC/xcp_d/blob/26.0.2/xcp_d/cli/parser.py)，
-不会自动寻找其他缓存或尝试在线下载。
+不会自动寻找其他图谱缓存，图谱数据集需提前准备。
 
 ## 科学方法
 
@@ -65,7 +67,8 @@ XCP-D 26.0.2 默认从镜像中的 `/home/xcp_d/.cache/xcp_d/XCPDAtlases` 与
 
 沿用参考版本 25.2.5 和输出空间 T1w、MNI152NLin2009cAsym、MNI152NLin6Asym、fsLR、
 fsaverage，生成 91k CIFTI，并保留全部 CompCor components。仅选择 `task-rest`，
-不设置忽略 slice timing 或 fieldmap 的参数。BIDS 验证保持开启；需先解决输入格式错误。
+不设置忽略 slice timing 或 fieldmap 的参数。沿用 `--skip-bids-validation` 跳过 BIDS 验证；
+不另加预验证步骤，运行失败后再根据日志检查输入格式与元数据。
 FreeSurfer 按数据集独立保存。随机种子固定为 42，默认每个被试申请 6 核。
 容器明确使用 `--nprocs 6 --omp-nthreads 6`，与参考脚本一致；不额外注入单线程环境变量。
 参数已对照 [fMRIPrep 25.2.5 使用说明](https://fmriprep.org/en/25.2.5/usage.html)。

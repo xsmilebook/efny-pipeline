@@ -92,9 +92,16 @@ uv run --offline --no-sync efny-imaging start-container \
     --config "$config" --project-root "$project_root"
 mkdir -p "$OUTPUT_DIR" "$WORK_DIR" "$TEMP_DIR"
 
-while IFS= read -r variable; do
-    if [[ "${variable,,}" == *proxy* ]]; then unset "$variable"; fi
-done < <(compgen -e)
+# Preserve the reference compute-node proxy inside the clean container environment.
+proxy_url="http://10.11.100.5:3128"
+export http_proxy="$proxy_url" HTTP_PROXY="$proxy_url"
+export https_proxy="$proxy_url" HTTPS_PROXY="$proxy_url"
+export ftp_proxy="$proxy_url" FTP_PROXY="$proxy_url"
+export all_proxy="$proxy_url" ALL_PROXY="$proxy_url"
+export SINGULARITYENV_http_proxy="$proxy_url" SINGULARITYENV_HTTP_PROXY="$proxy_url"
+export SINGULARITYENV_https_proxy="$proxy_url" SINGULARITYENV_HTTPS_PROXY="$proxy_url"
+export SINGULARITYENV_ftp_proxy="$proxy_url" SINGULARITYENV_FTP_PROXY="$proxy_url"
+export SINGULARITYENV_all_proxy="$proxy_url" SINGULARITYENV_ALL_PROXY="$proxy_url"
 export SINGULARITYENV_TEMPLATEFLOW_HOME=/templateflow SINGULARITYENV_SUBJECTS_DIR=/freesurfer
 export SINGULARITYENV_TMPDIR=/tmp SINGULARITYENV_OMP_NUM_THREADS=1
 export SINGULARITYENV_OPENBLAS_NUM_THREADS=1 SINGULARITYENV_MKL_NUM_THREADS=1 SINGULARITYENV_NUMEXPR_NUM_THREADS=1

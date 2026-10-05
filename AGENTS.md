@@ -81,6 +81,7 @@ fMRIPrep 和 XCP-D 的完整命令、参数选择及执行顺序应直接写在�
 
 - 迁移 `data_driven_EF` 分析时逐项对照参考脚本，未经用户明确要求，不自行改变分析或资源参数。
 - 将必要的项目路径适配与分析方法变更分别说明；发现差异时记录原值、现值、原因和科学影响，不能将通用优化建议当作修改依据。
+- fMRIPrep 沿用 `--skip-bids-validation`，不单独增加运行前 BIDS 验证步骤；运行失败后再检查输入。fMRIPrep／XCP-D 保留参考脚本的代理 `http://10.11.100.5:3128`，并通过 `SINGULARITYENV_*` 传入容器。
 
 ## 4. Validation and error handling
 

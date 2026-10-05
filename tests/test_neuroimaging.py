@@ -221,7 +221,15 @@ class NeuroimagingTests(unittest.TestCase):
         stubs = {
             "uv": '#!/usr/bin/env bash\nif [[ "$1" == sync ]]; then exit 0; fi\nshift 3\n[[ "$1" == efny-imaging ]] || exit 2\nshift\nexec "$TEST_PYTHON" -m imaging.pipeline "$@"\n',
             "module": '#!/usr/bin/env bash\nexit 0\n',
-            "singularity": '#!/usr/bin/env bash\nif [[ "${@: -1}" == --version ]]; then printf "mock-container\\n"; fi\n',
+            "singularity": (
+                '#!/usr/bin/env bash\n'
+                'for variable in http_proxy HTTP_PROXY https_proxy HTTPS_PROXY ftp_proxy FTP_PROXY all_proxy ALL_PROXY '
+                'SINGULARITYENV_http_proxy SINGULARITYENV_HTTP_PROXY SINGULARITYENV_https_proxy SINGULARITYENV_HTTPS_PROXY '
+                'SINGULARITYENV_ftp_proxy SINGULARITYENV_FTP_PROXY SINGULARITYENV_all_proxy SINGULARITYENV_ALL_PROXY; do\n'
+                '    [[ "${!variable}" == "http://10.11.100.5:3128" ]] || exit 91\n'
+                'done\n'
+                'if [[ "${@: -1}" == --version ]]; then printf "mock-container\\n"; fi\n'
+            ),
         }
         for name, content in stubs.items():
             path = fake_bin / name
@@ -244,7 +252,7 @@ class NeuroimagingTests(unittest.TestCase):
             self.assertEqual(command[command.index("--omp-nthreads") + 1], "6" if stage == "fmriprep" else "1")
             if stage == "fmriprep":
                 self.assertIn((self.root / "bids").as_posix() + ":/BIDS:ro", command)
-                self.assertNotIn("--skip-bids-validation", command)
+                self.assertIn("--skip-bids-validation", command)
             else:
                 self.assertEqual(command[command.index("--fd-thresh") + 1], "0")
                 self.assertEqual(command[command.index("--nuisance-regressors") + 1], "36P")
