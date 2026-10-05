@@ -105,7 +105,8 @@ export SINGULARITYENV_all_proxy="$proxy_url" SINGULARITYENV_ALL_PROXY="$proxy_ur
 export SINGULARITYENV_TEMPLATEFLOW_HOME=/templateflow SINGULARITYENV_SUBJECTS_DIR=/freesurfer
 export SINGULARITYENV_TMPDIR=/tmp SINGULARITYENV_OMP_NUM_THREADS=1
 export SINGULARITYENV_OPENBLAS_NUM_THREADS=1 SINGULARITYENV_MKL_NUM_THREADS=1 SINGULARITYENV_NUMEXPR_NUM_THREADS=1
-tool_version=$(singularity run --cleanenv "$IMAGE" --version)
+# Version startup imports TemplateFlow, so it needs the same mounts as processing.
+tool_version=$("${command[@]}" --version)
 
 printf '%q ' "${command[@]}"
 printf '\n'

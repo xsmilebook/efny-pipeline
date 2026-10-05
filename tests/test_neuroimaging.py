@@ -228,6 +228,7 @@ class NeuroimagingTests(unittest.TestCase):
                 'SINGULARITYENV_ftp_proxy SINGULARITYENV_FTP_PROXY SINGULARITYENV_all_proxy SINGULARITYENV_ALL_PROXY; do\n'
                 '    [[ "${!variable}" == "http://10.11.100.5:3128" ]] || exit 91\n'
                 'done\n'
+                '[[ " $* " == *":/templateflow:ro "* ]] || exit 92\n'
                 'if [[ "${@: -1}" == --version ]]; then printf "mock-container\\n"; fi\n'
             ),
         }

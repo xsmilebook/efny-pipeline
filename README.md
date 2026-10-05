@@ -46,6 +46,7 @@ fMRIPrep 沿用参考脚本的 `--nprocs 6 --omp-nthreads 6`；其余与参考�
 [参数对照与原因](docs/neuroimaging_reference_audit.md)。
 fMRIPrep 跳过 BIDS 验证，运行失败后再检查输入；fMRIPrep 和 XCP-D 均保留参考代理
 `http://10.11.100.5:3128`，显式传入容器环境。
+容器版本检查使用与正式处理相同的挂载，确保启动时能访问 TemplateFlow 缓存。
 fMRIPrep 和 XCP-D 的完整容器命令及分析参数直接列在
 [run_fmriprep.sbatch](scripts/neuroimaging/run_fmriprep.sbatch) 和
 [run_xcpd.sbatch](scripts/neuroimaging/run_xcpd.sbatch) 中，可逐项检查和修改。

@@ -26,7 +26,7 @@
 - 审计与候选／缺失名单保存在集群项目的
   `outputs/logs/neuroimaging/fmriprep/THU/rest/`：
   `input_availability_20261006.csv`、`subjects_rest_available_20261006.txt`、
-  `subjects_missing_rest_20261006.txt`。候选名单尚未作为正式分析清单。
+  `subjects_missing_rest_20261006.txt`。用户随后明确回复“直接提交”，已采用 745 人的名单。
 - 计算节点预检作业 `15214450`，q_fat_c、6 CPU，在 fat17 完成，退出码 0。
   验证离线 Python 环境、科学库导入和真实 fMRIPrep 镜像的版本启动；未执行影像预处理。
 - 提交前查到的既有作业 `15073160` 为 data_driven_EF 路径下的 bash 作业，
@@ -34,6 +34,16 @@
 
 ## 正式提交状态
 
-尚未提交正式 fMRIPrep 作业。已向用户确认：先提交有静息态数据的 745 人，
-或等待补齐其余 19 人后再提交。因这是对“全部被试”的样本范围调整，
-依项目禁止自动排除／静默跳过的规则，等待明确选择后继续。
+用户明确同意先提交有静息态数据的 745 人，19 人保留缺失名单。
+
+- `prepare --dataset THU --subjects outputs/logs/neuroimaging/fmriprep/THU/rest/subjects_rest_available_20261006.txt`
+  已生成正式清单，745 人、2483 个 run。
+- 首批于集群时间 02:04:26–02:04:38 提交，作业编号 `15214451`–`15215195`，
+  提交清单 `submission_batch_20261006.csv`，运行代码版本 `25fcbdb`。
+- 首批作业在版本检查时失败：脚本导出 `TEMPLATEFLOW_HOME=/templateflow` 后，
+  无挂载调用镜像 `--version`，导入 TemplateFlow 时尝试在镜像只读文件系统建立该目录。
+  失败发生在正式预处理前，既有无挂载预检未覆盖这一环境组合。
+- 检查剩余活动作业时首批已全部结束，没有实际执行取消；不影响其他项目的作业。
+- 已修正 fMRIPrep／XCP-D 版本检查，复用完整命令的挂载和环境，追加 `--version`。
+  不改变已确认的科学分析参数。
+- 修正后的计算节点验证和重提交状态将继续记录。
