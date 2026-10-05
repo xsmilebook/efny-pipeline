@@ -1,4 +1,23 @@
-# MRI series-folder inventory
+# efny-pipeline
+
+## 本地与集群开发
+
+目录约定见 [ARCHITECTURE.md](ARCHITECTURE.md)，协作规则见 [AGENTS.md](AGENTS.md)，
+运行环境与 Slurm 约定见[集群使用说明](docs/cluster_usage.md)。
+
+代码与文档通过 Git 交换：切换开发端前提交并推送，另一端检查工作区和分支后拉取。
+Windows 与 Linux 各自建立仓库根目录 `.venv`，已有依赖清单与锁文件纳入 Git。
+数据和结果由各端独立管理，当前不配置镜像、双向同步或自动传输；运行前确认当前端的输入可用。
+
+现有 MATLAB 批量入口仍使用 Windows 绝对路径，DICOM 转换入口固定使用 4 个 worker。
+集群运行前需针对实际路径、Linux 版 `dcm2niix` 和 Slurm CPU 配额调整入口并进行小规模验证；
+当前尚无本项目的正式 sbatch 入口，也未验证计算节点运行。批量转换和并行任务应提交 Slurm。
+现有 Python 序列目录清单脚本只使用标准库，当前没有 `pyproject.toml` 或 `uv.lock`。
+
+正式运行需记录代码 commit、工作区状态、命令、输入范围与位置、输出位置、软件版本和作业编号。
+下文事件替换的传输说明仅适用于明确要求执行的单次替换，不表示本项目已建立数据同步。
+
+## MRI series-folder inventory
 
 `export_series_folders.py` recursively searches below each subject's `MRIdata`. It exports a directory when one or more of its immediate child-folder names match this cohort's sequence conventions: `EP2D_`, `LOCALIZER`, `PHOENIXZIPREPORT`, `SMS*_BOLD_`, `SMS*_DIFF_`, `T1_`, or `T2_`. For each exported directory, it records the path relative to `MRIdata` and only the child folders matching these prefixes. It performs no file inspection, DICOM reading, scan/session inference, or BIDS inference.
 
