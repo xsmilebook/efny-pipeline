@@ -67,3 +67,19 @@
 `outputs/`、正式分析清单、缺失名单、逐作业日志及提交清单都在这个目录下。
 原来的 `/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline` 是另一份代码检出，
 检查时没有 `outputs/`。运行产物未写入旧目录，也未在两份检出间同步数据。
+
+## 取消、清理与统一开发路径
+
+用户随后要求取消全部 fMRIPrep 作业、删除已有结果，并将集群项目开发目录及结果根目录
+统一为 `/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline`，随后重新提交全部已确认被试。
+
+- 已取消 740 个活动 fMRIPrep 作业（91 RUNNING、649 PENDING）；后续确认队列中
+  fMRIPrep 为 0，未取消其他项目的 bash 作业。
+- 上批 745 个作业的 accounting 为 740 CANCELLED、5 FAILED；至少一个失败日志
+  明确报告缺少 T1w。保持用户确认的 745 人名单，不因已知失败而自动缩小样本。
+- 取消记录位于原根目录模块日志下的 `cancellation_20261006.json`。
+- 清理仅针对 THU fMRIPrep／FreeSurfer 衍生结果、fMRIPrep 工作缓存、容器临时目录及
+  失效锁／完成标记；保留原始 BIDS、代码检出、历史提交清单和失败日志。
+- 更新统一配置与当前方法／路径说明，所有影像生产模块及其读取端共同改用新根目录。
+  原根目录仅保留历史来源记录，不再作为正式结果路径；不复制虚拟环境或数据。
+- 新根目录的已有代码工作区干净，版本为 `470d55e`，通过 Git 快进更新后建立独立环境。

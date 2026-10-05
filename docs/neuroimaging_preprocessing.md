@@ -20,7 +20,7 @@ censoring 和 run 合并等参数在对应命令中逐项列出，便于科研�
 
 | 配置项 | 当前值 |
 | --- | --- |
-| 集群项目根目录 | `/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline` |
+| 集群项目根目录 | `/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline` |
 | THU BIDS 输入 | `/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new` |
 | THU 被试前缀 | `sub-THU` |
 | XY BIDS 输入 | 暂未确定，配置值为 `null`，填写前禁止运行 |
@@ -28,6 +28,13 @@ censoring 和 run 合并等参数在对应命令中逐项列出，便于科研�
 
 输入在容器中只读挂载，全部衍生数据、FC、QC 和日志写入项目根目录下的生产模块。
 THU 与 XY 分别建立输入清单、QC 分布和结果，不跨数据集混合。当前不配置数据同步。
+
+2026-10-06 按用户要求，将集群开发目录与结果根目录统一到上述路径。
+此前 `DATA_C/projects/efny-pipeline` 下的 THU fMRIPrep／FreeSurfer 衍生结果、工作缓存和
+容器临时目录在作业停止后删除；历史提交清单及失败日志保留用于追溯。新批次重新生成
+输入清单，fMRIPrep、XCP-D、头动和 FC 的生产端与读取端均使用同一新根目录，
+不读取旧路径作为回退。清理及重新提交的记录见
+[当日会话记录](sessions/2026-10-06_thu_fmriprep_submission.md)。
 
 ## 环境与外部资源
 
@@ -126,7 +133,7 @@ r 对角线为 1，z 对角线为 0，均保存有明确 ROI 行列标签的 CSV
 本入口不自动等待作业，也不自动提交整条长流水线。
 
 ```bash
-cd /ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline
+cd /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline
 
 # Build the THU source inventory, without modifying BIDS.
 uv run --offline --no-sync efny-imaging prepare --dataset THU

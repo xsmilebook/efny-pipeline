@@ -21,7 +21,7 @@ Python 依赖由 `pyproject.toml`、`uv.lock` 管理；原序列目录清单脚�
 
 完整方法、路径与分阶段提交命令见[静息态影像流程](docs/neuroimaging_preprocessing.md)。
 统一配置为 [configs/neuroimaging.json](configs/neuroimaging.json)，默认集群项目根目录为
-`/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline`，THU 的只读 BIDS 输入为
+`/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline`，THU 的只读 BIDS 输入为
 `/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new`。
 XY 保留独立配置，`bids_dir` 当前为空，填写后才能运行。
 

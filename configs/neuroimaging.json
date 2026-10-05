@@ -1,5 +1,5 @@
 {
-  "project_root": "/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline",
+  "project_root": "/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline",
   "datasets": {
     "THU": {
       "bids_dir": "/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new",

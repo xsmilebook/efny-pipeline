@@ -19,7 +19,8 @@
 - 数据和结果各端独立管理，当前不配置镜像、双向同步或自动传输。缺少输入时明确停止相关运行，
   不假设另一端已有数据等于当前端已就绪。
 - 本地项目根目录为 `D:\projects\efny-pipeline`。集群项目根目录由用户确定为
-  `/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline`；THU BIDS 输入为
+  `/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline`；开发代码与运行产物使用同一项目根目录。
+  THU BIDS 输入为
   `/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new`。
   XY 输入暂未确定，不直接套用 THU 或参考项目的路径。MATLAB 转换的原始输入、NIfTI
   和事件替换目录仍需单独确认。

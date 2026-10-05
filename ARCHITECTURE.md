@@ -73,7 +73,7 @@ efny-pipeline/                  # 项目根目录
 ## 静息态影像生产模块
 
 集群项目根目录由 `configs/neuroimaging.json` 统一指定，默认
-`/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline`。
+`/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline`。
 外部 BIDS 根目录按数据集独立配置，只读使用，不复制到 `data/raw/`。
 模块路径由 `src/imaging/config.py` 统一生成，`<dataset>` 为 THU 或 XY。
 fMRIPrep／XCP-D 的分析参数选择和完整容器命令直接保存在对应 sbatch 脚本中；

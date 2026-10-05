@@ -92,7 +92,7 @@ class NeuroimagingTests(unittest.TestCase):
     def test_default_paths_and_unconfigured_xy(self):
         config = load_config(REPO / "configs/neuroimaging.json", "THU")
         self.assertEqual(config["bids_dir"], "/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new")
-        self.assertIn("DATA_C/projects/efny-pipeline", config["project_root"])
+        self.assertEqual(config["project_root"], "/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline")
         self.assertEqual(config["head_motion"]["min_valid_runs"], 2)
         with self.assertRaises(ValueError):
             load_config(REPO / "configs/neuroimaging.json", "XY")
