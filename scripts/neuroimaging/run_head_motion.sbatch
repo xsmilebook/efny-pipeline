@@ -2,7 +2,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH -p q_fat_c,q_fat
+#SBATCH -p q_fat_c
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR}"

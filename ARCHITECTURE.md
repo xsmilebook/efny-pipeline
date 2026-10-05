@@ -25,13 +25,13 @@ efny-pipeline/                  # 项目根目录
 ├── src/                        # 可复用模块（不含硬编码路径）
 │   ├── imaging/                # 影像预处理与影像指标提取
 │   │   ├── config.py           # 统一配置与模块输出路径
-│   │   ├── pipeline.py         # 输入清单、容器、Slurm 与完成审计入口
+│   │   ├── pipeline.py         # 输入清单、Slurm 提交与结果完成审计入口
 │   │   └── rest.py             # 头动 QC 与被试级 CIFTI 功能连接
 │   ├── behavior/               # 行为任务与人口学预处理
 │   └── inventory/              # 问卷与量表处理（预留）
 │
 ├── scripts/                    # 执行入口（本地/HPC/主流程脚本）
-│   ├── neuroimaging/
+│   ├── neuroimaging/           # fMRIPrep／XCP-D 完整命令及四阶段 sbatch 入口
 │   ├── behavior/
 │   └── inventory/              # 量表处理入口（预留）
 │
@@ -76,6 +76,8 @@ efny-pipeline/                  # 项目根目录
 `/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline`。
 外部 BIDS 根目录按数据集独立配置，只读使用，不复制到 `data/raw/`。
 模块路径由 `src/imaging/config.py` 统一生成，`<dataset>` 为 THU 或 XY。
+fMRIPrep／XCP-D 的分析参数选择和完整容器命令直接保存在对应 sbatch 脚本中；
+统一配置保留路径及需供审计、头动和 FC 读取的参数值，`src/` 不组装容器分析命令。
 
 | 生产模块 | 产物 | 归属路径（相对项目根目录） |
 | --- | --- | --- |

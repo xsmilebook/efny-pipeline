@@ -19,7 +19,7 @@
     "atlas_datasets": {}
   },
   "slurm": {
-    "partition": "q_fat_c,q_fat",
+    "partition": "q_fat_c",
     "fmriprep_cpus": 6,
     "xcpd_cpus": 1,
     "head_motion_cpus": 1,

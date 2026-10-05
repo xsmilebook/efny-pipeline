@@ -11,7 +11,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from imaging.config import load_config, module_path
+from imaging.config import load_config, module_path, shell_config
 from imaging.rest import compute_fc, compute_motion, derivative_path, load_ptseries, read_csv, summarize_qc, write_csv
 
 
@@ -208,79 +208,37 @@ def check(config: dict, stage: str, scans: list[dict]) -> None:
     print(f"{stage}: {sum(row['complete'] == 'true' for row in rows)}/{len(rows)} complete; audit={root / 'completion_audit.csv'}")
 
 
-def container_command(config: dict, stage: str, subject: str, cpus: int) -> tuple[list[str], dict]:
-    """Build pinned rest container commands with read-only inputs and module-owned work paths."""
-    tools = config["tools"]
-    output = module_path(config, stage, "interim")
-    work = output.parent / "work" / subject
-    temporary = module_path(config, stage, "temp") / subject / os.environ.get("SLURM_JOB_ID", "manual")
-    freesurfer = Path(config["project_root"]) / "data/interim/neuroimaging/freesurfer" / config["dataset"]
-    binds = [
-        (work, "/wd", "rw"), (temporary, "/tmp", "rw"),
-        (output, "/output", "rw"), (Path(tools["fs_license"]), "/fs_license/license.txt", "ro"),
-        (Path(tools["templateflow"]), "/templateflow", "ro"),
-    ]
-    command = ["singularity", "run", "--cleanenv"]
-    if stage == "fmriprep":
-        binds += [(Path(config["bids_dir"]), "/BIDS", "ro"), (freesurfer, "/freesurfer", "rw")]
-        arguments = [
-            "/BIDS", "/output", "participant", "--participant-label", subject.removeprefix("sub-"),
-            "--task-id", "rest", "--fs-subjects-dir", "/freesurfer",
-            "--fs-license-file", "/fs_license/license.txt", "--output-spaces",
-            *config["fmriprep"]["output_spaces"], "--cifti-output", "91k",
-            "--nprocs", str(cpus), "--omp-nthreads", "1", "--return-all-components",
-            "--random-seed", str(config["fmriprep"]["random_seed"]),
-            "--output-layout", "bids", "--notrack", "--stop-on-first-crash", "-w", "/wd",
-        ]
-    else:
-        binds += [(module_path(config, "fmriprep", "interim"), "/fmriprep", "ro"), (freesurfer, "/freesurfer", "ro")]
-        settings = config["xcpd"]
-        arguments = [
-            "/fmriprep", "/output", "participant", "--participant-label", subject.removeprefix("sub-"),
-            "--input-type", "fmriprep", "--mode", "none", "--task-id", "rest",
-            "--fs-license-file", "/fs_license/license.txt", "-w", "/wd",
-            "--nprocs", str(cpus), "--omp-nthreads", "1",
-            "--nuisance-regressors", settings["nuisance_regressors"],
-            "--dummy-scans", str(settings["dummy_scans"]), "--smoothing", "0", "--despike", "n",
-            "--file-format", "cifti", "--output-type", "censored", "--combine-runs", "n",
-            "--warp-surfaces-native2std", "n", "--linc-qc", "n", "--abcc-qc", "n",
-            "--min-coverage", str(settings["min_coverage"]), "--create-matrices", "all",
-            "--output-run-wise-correlations", "y", "--head-radius", "auto",
-            "--bpf-order", str(settings["bpf_order"]), "--lower-bpf", str(settings["lower_bpf_hz"]),
-            "--upper-bpf", str(settings["upper_bpf_hz"]), "--motion-filter-type", settings["motion_filter_type"],
-            "--band-stop-min", str(settings["motion_filter_bpm"]), "--fd-thresh", "0",
-            "--atlases", *config["atlases"], "--output-layout", "bids", "--notrack",
-            "--random-seed", str(settings["random_seed"]), "--stop-on-first-crash",
-        ]
-        atlas_arguments = []
-        for name, host in tools["atlas_datasets"].items():
-            container = f"/atlases/{name}"
-            binds.append((Path(host), container, "ro"))
-            atlas_arguments.append(f"{name}={container}")
-        if atlas_arguments:
-            arguments += ["--datasets", *atlas_arguments]
-    for host, container, access in binds:
-        command += ["-B", f"{host}:{container}:{access}"]
-    command += [tools[stage + "_image"], *arguments]
-    # Cleanenv alone does not override explicit SINGULARITYENV proxy variables inherited from a shell.
-    environment = {key: value for key, value in os.environ.items() if "proxy" not in key.lower()}
-    for key, value in dict(TEMPLATEFLOW_HOME="/templateflow", SUBJECTS_DIR="/freesurfer", TMPDIR="/tmp",
-                           OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1", NUMEXPR_NUM_THREADS="1").items():
-        environment["SINGULARITYENV_" + key] = value
-    return command, environment
+def start_container(config: dict, stage: str, subject: str, scans: list[dict]) -> None:
+    """Require the prepared input and current upstream output before the shell runs a container."""
+    assert any(scan["subject"] == subject for scan in scans), f"Unknown subject: {subject}"
+    for previous in UPSTREAM[stage]:
+        assert_completed(config, previous, subject, scans)
+    record_path(config, stage, subject).unlink(missing_ok=True)
 
 
-def run_stage(config: dict, stage: str, subject: str, scans: list[dict], dry_run: bool) -> None:
-    """Run one participant and write completion only after the required products are present."""
+def finish_container(config: dict, stage: str, subject: str, scans: list[dict], command: list[str], version: str) -> None:
+    """Audit shell-produced derivatives before recording their actual command and successful completion."""
     subset = [scan for scan in scans if scan["subject"] == subject]
-    assert subset, f"Subject absent from prepared inventory: {subject}"
-    cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", config["slurm"][stage + "_cpus"]))
+    assert subset, f"Unknown subject: {subject}"
+    missing = [path for path in required_products(config, stage, subset) if not path.is_file()]
+    assert not missing, f"Container exited but expected rest derivatives are missing: {missing}"
+    validate_time_axes(config, stage, subset)
+    save_record(config, stage, subject, scans, command, version)
+
+
+def run_stage(config: dict, stage: str, subject: str, scans: list[dict], dry_run: bool,
+              config_path: Path = Path("configs/neuroimaging.json")) -> None:
+    """Run scientific shell scripts for preprocessing, or Python calculations for head motion and FC."""
+    assert any(scan["subject"] == subject for scan in scans), f"Unknown subject: {subject}"
     if stage in ("fmriprep", "xcpd"):
-        command, environment = container_command(config, stage, subject, cpus)
+        script = Path(config["project_root"]) / "scripts/neuroimaging" / f"run_{stage}.sbatch"
+        command = ["bash", str(script), config["dataset"], subject,
+                   str(config_path.resolve()), config["project_root"]]
         if dry_run:
-            print(shlex.join(command))
-            return
-    elif dry_run:
+            command.append("--dry-run")
+        subprocess.run(command, check=True)
+        return
+    if dry_run:
         print(f"{stage}: dataset={config['dataset']}, subject={subject}, root={config['project_root']}")
         return
     for previous in UPSTREAM[stage]:
@@ -290,33 +248,17 @@ def run_stage(config: dict, stage: str, subject: str, scans: list[dict], dry_run
     locks = module_path(config, stage, "logs") / "locks"
     locks.mkdir(parents=True, exist_ok=True)
     lock = locks / (subject + ".lock")
-    lock.mkdir()  # Prevent two jobs from writing one participant's derivatives.
-    marker = record_path(config, stage, subject)
-    marker.unlink(missing_ok=True)
+    lock.mkdir()
+    record_path(config, stage, subject).unlink(missing_ok=True)
     try:
-        if stage in ("fmriprep", "xcpd"):
-            root = module_path(config, stage, "interim")
-            for path in [root, root.parent / "work" / subject,
-                         module_path(config, stage, "temp") / subject / os.environ.get("SLURM_JOB_ID", "manual")]:
-                path.mkdir(parents=True, exist_ok=True)
-            if stage == "fmriprep":
-                (Path(config["project_root"]) / "data/interim/neuroimaging/freesurfer" / config["dataset"]).mkdir(parents=True, exist_ok=True)
-            version = subprocess.check_output(["singularity", "run", "--cleanenv", config["tools"][stage + "_image"], "--version"], env=environment, text=True).strip()
-            print(shlex.join(command), flush=True)
-            subprocess.run(command, env=environment, check=True)
-            missing = [path for path in required_products(config, stage, subset) if not path.is_file()]
-            assert not missing, f"Container exited but expected rest derivatives are missing: {missing}"
-            validate_time_axes(config, stage, subset)
+        import nibabel
+        import numpy
+        if stage == "head_motion":
+            compute_motion(config, scans, subject)
         else:
-            import nibabel
-            import numpy
-            if stage == "head_motion":
-                compute_motion(config, scans, subject)
-            else:
-                compute_fc(config, scans, subject)
-            command = sys.argv
-            version = f"numpy={numpy.__version__}, nibabel={nibabel.__version__}"
-        save_record(config, stage, subject, scans, command, version)
+            compute_fc(config, scans, subject)
+        version = f"numpy={numpy.__version__}, nibabel={nibabel.__version__}"
+        save_record(config, stage, subject, scans, sys.argv, version)
     finally:
         lock.rmdir()
 
@@ -364,7 +306,7 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="EFNY no-session, run-indexed rest neuroimaging pipeline.")
-    parser.add_argument("command", choices=["prepare", "submit", "run", "check", "qc", "show-config"])
+    parser.add_argument("command", choices=["prepare", "submit", "run", "check", "qc", "show-config", "shell-config", "start-container", "finish-container"])
     parser.add_argument("--config", type=Path, default=Path("configs/neuroimaging.json"))
     parser.add_argument("--dataset", choices=["THU", "XY"], default="THU")
     parser.add_argument("--project-root", type=Path)
@@ -372,11 +314,16 @@ def main() -> None:
     parser.add_argument("--subject")
     parser.add_argument("--subjects", type=Path, help="Explicit sub-ID list; subset submission or input selection.")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--tool-version")
+    parser.add_argument("--container-command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     config = load_config(args.config, args.dataset, args.project_root)
     assert isinstance(config["xcpd"]["dummy_scans"], int) and config["xcpd"]["dummy_scans"] >= 0
     if args.command == "show-config":
         print(json.dumps(config, indent=2))
+    elif args.command == "shell-config":
+        assert args.stage in ("fmriprep", "xcpd") and args.subject
+        shell_config(config, args.stage, args.subject)
     elif args.command == "prepare":
         prepare(config, args.subjects)
     else:
@@ -398,9 +345,16 @@ def main() -> None:
                 scans = [scan for scan in scans if scan["subject"] == args.subject]
                 assert scans, "Unknown subject"
             check(config, args.stage, scans)
+        elif args.command == "start-container":
+            assert args.stage in ("fmriprep", "xcpd") and args.subject
+            start_container(config, args.stage, args.subject, scans)
+        elif args.command == "finish-container":
+            assert args.stage in ("fmriprep", "xcpd") and args.subject
+            assert args.container_command and args.tool_version
+            finish_container(config, args.stage, args.subject, scans, args.container_command, args.tool_version)
         elif args.command == "run":
             assert args.stage and args.subject, "run requires --stage and --subject"
-            run_stage(config, args.stage, args.subject, scans, args.dry_run)
+            run_stage(config, args.stage, args.subject, scans, args.dry_run, args.config)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,11 @@
 
 import io
 import json
+import os
+import shlex
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -15,13 +19,14 @@ from nibabel.cifti2 import BrainModelAxis, ParcelsAxis, SeriesAxis
 
 from imaging.config import load_config, module_path
 from imaging.pipeline import (
-    assert_completed, assert_qc_current, check, container_command, discover_scans, input_scans, prepare,
-    record_path, run_stage, submit,
+    assert_completed, assert_qc_current, check, discover_scans, finish_container, input_scans, prepare,
+    record_path, start_container, submit,
 )
 from imaging.rest import compute_fc, compute_motion, derivative_path, load_ptseries, read_csv, summarize_qc
 
 
 REPO = Path(__file__).resolve().parents[1]
+BASH = os.environ.get("EFNY_TEST_BASH") if os.name == "nt" else shutil.which("bash")
 
 
 class NeuroimagingTests(unittest.TestCase):
@@ -177,29 +182,23 @@ class NeuroimagingTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "time window"):
             compute_fc(self.config, self.scans, "sub-THU0001")
 
-    def test_container_commands_and_submission_preview(self):
-        fmriprep, _ = container_command(self.config, "fmriprep", "sub-THU0001", 6)
-        self.assertIn(str(self.root / "bids") + ":/BIDS:ro", fmriprep)
-        self.assertNotIn("--skip-bids-validation", fmriprep)
-        xcpd, environment = container_command(self.config, "xcpd", "sub-THU0001", 1)
-        self.assertEqual(xcpd[xcpd.index("--fd-thresh") + 1], "0")
-        self.assertEqual(xcpd[xcpd.index("--dummy-scans") + 1], "0")
-        self.assertEqual(xcpd[xcpd.index("--output-layout") + 1], "bids")
-        self.assertFalse(any("proxy" in key.lower() for key in environment))
+    def test_submission_preview(self):
         output = io.StringIO()
         with redirect_stdout(output):
             submit(self.config, "fmriprep", REPO / "configs/neuroimaging.json", self.scans, None, True)
         self.assertEqual(output.getvalue().count("sbatch --parsable"), 2)
         self.assertIn("--cpus-per-task 6", output.getvalue())
+        self.assertIn("--partition q_fat_c ", output.getvalue())
         self.assertNotIn("--time", output.getvalue())
         self.assertNotIn("--mem", output.getvalue())
 
     def test_completion_tracks_reruns_and_missing_products(self):
         prepare(self.config, None)
         scans = input_scans(self.config)
-        with patch("imaging.pipeline.subprocess.run"), patch("imaging.pipeline.subprocess.check_output", return_value="synthetic-version"):
-            run_stage(self.config, "fmriprep", "sub-THU0001", scans, False)
-            run_stage(self.config, "xcpd", "sub-THU0001", scans, False)
+        with patch("imaging.pipeline.subprocess.check_output", return_value="synthetic-version"):
+            for stage in ("fmriprep", "xcpd"):
+                start_container(self.config, stage, "sub-THU0001", scans)
+                finish_container(self.config, stage, "sub-THU0001", scans, ["singularity", stage], "synthetic-version")
         assert_completed(self.config, "xcpd", "sub-THU0001", scans)
         check(self.config, "xcpd", scans)
         audit = read_csv(module_path(self.config, "xcpd", "logs") / "completion_audit.csv")
@@ -211,6 +210,59 @@ class NeuroimagingTests(unittest.TestCase):
         marker.write_text(json.dumps(record), encoding="utf-8")
         with self.assertRaisesRegex(AssertionError, "was rerun"):
             assert_completed(self.config, "xcpd", "sub-THU0001", scans)
+
+    @unittest.skipUnless(BASH, "Set EFNY_TEST_BASH to a native Bash executable on Windows")
+    def test_shell_commands_and_completion_with_mocked_containers(self):
+        prepare(self.config, None)
+        config_path = self.root / "config.json"
+        config_path.write_text(json.dumps(self.config), encoding="utf-8")
+        fake_bin = self.root / "bin"
+        fake_bin.mkdir()
+        stubs = {
+            "uv": '#!/usr/bin/env bash\nif [[ "$1" == sync ]]; then exit 0; fi\nshift 3\n[[ "$1" == efny-imaging ]] || exit 2\nshift\nexec "$TEST_PYTHON" -m imaging.pipeline "$@"\n',
+            "module": '#!/usr/bin/env bash\nexit 0\n',
+            "singularity": '#!/usr/bin/env bash\nif [[ "${@: -1}" == --version ]]; then printf "mock-container\\n"; fi\n',
+        }
+        for name, content in stubs.items():
+            path = fake_bin / name
+            path.write_text(content, encoding="utf-8")
+            path.chmod(0o755)
+        environment = dict(os.environ)
+        environment.pop("SLURM_CPUS_PER_TASK", None)
+        environment.update(TEST_PYTHON=Path(sys.executable).as_posix(),
+                           SLURM_SUBMIT_DIR=self.root.as_posix(), MSYS2_ARG_CONV_EXCL="*")
+        # Set PATH inside Bash so the same stubs work on Linux and Git Bash for Windows.
+        wrapper = self.root / "test_stage.sh"
+        wrapper.write_text('#!/usr/bin/env bash\nexport PATH="$(cd "$TEST_BIN" && pwd):$PATH"\nexec bash "$@"\n', encoding="utf-8")
+        environment["TEST_BIN"] = fake_bin.as_posix()
+        for stage in ("fmriprep", "xcpd"):
+            arguments = [BASH, wrapper.as_posix(), (REPO / f"scripts/neuroimaging/run_{stage}.sbatch").as_posix(),
+                         "THU", "sub-THU0001", config_path.as_posix(), self.root.as_posix()]
+            preview = subprocess.run([*arguments, "--dry-run"], env=environment, text=True, capture_output=True, check=True)
+            command = shlex.split(preview.stdout.strip())
+            self.assertEqual(command[command.index("--nprocs") + 1], "6" if stage == "fmriprep" else "1")
+            if stage == "fmriprep":
+                self.assertIn((self.root / "bids").as_posix() + ":/BIDS:ro", command)
+                self.assertNotIn("--skip-bids-validation", command)
+            else:
+                self.assertEqual(command[command.index("--fd-thresh") + 1], "0")
+                self.assertEqual(command[command.index("--nuisance-regressors") + 1], "36P")
+            execution = subprocess.run(arguments, env=environment, text=True, capture_output=True)
+            self.assertEqual(execution.returncode, 0, execution.stderr)
+            record = assert_completed(self.config, stage, "sub-THU0001", self.scans)
+            self.assertEqual(record["command"], command)
+            self.assertFalse((module_path(self.config, stage, "logs") / "locks/sub-THU0001.lock").exists())
+
+        # A failed rerun must invalidate the old completion and release its lock.
+        (fake_bin / "singularity").write_text(
+            '#!/usr/bin/env bash\nif [[ "${@: -1}" == --version ]]; then printf "mock-container\\n"; else exit 7; fi\n',
+            encoding="utf-8",
+        )
+        arguments[2] = (REPO / "scripts/neuroimaging/run_fmriprep.sbatch").as_posix()
+        failed = subprocess.run(arguments, env=environment, text=True, capture_output=True)
+        self.assertEqual(failed.returncode, 7, failed.stderr)
+        self.assertFalse(record_path(self.config, "fmriprep", "sub-THU0001").exists())
+        self.assertFalse((module_path(self.config, "fmriprep", "logs") / "locks/sub-THU0001.lock").exists())
 
     def test_qc_is_invalidated_by_a_new_head_motion_run(self):
         self.motion_qc()

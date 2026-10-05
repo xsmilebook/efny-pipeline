@@ -10,6 +10,14 @@ run 编号可以不连续，按整数排序，不限制为参考项目的 run 1�
 
 统一配置为 `configs/neuroimaging.json`，模块路径定义见 [ARCHITECTURE.md](../ARCHITECTURE.md)。
 
+fMRIPrep 和 XCP-D 的完整分析命令分别写在
+[`run_fmriprep.sbatch`](../scripts/neuroimaging/run_fmriprep.sbatch) 和
+[`run_xcpd.sbatch`](../scripts/neuroimaging/run_xcpd.sbatch)。输出空间、回归、滤波、平滑、
+censoring 和 run 合并等参数在对应命令中逐项列出，便于科研人员查看分析逻辑。
+配置文件保留共享路径和可调参数值，`src/imaging/` 负责路径解析、输入清单、Slurm 提交、
+时间轴／产物审计和头动／FC 计算，不再组装 fMRIPrep／XCP-D 容器命令。
+修改命令中的固定科学选项后，应同步方法说明及相关审计假设，并重跑该阶段与下游。
+
 | 配置项 | 当前值 |
 | --- | --- |
 | 集群项目根目录 | `/ibmgpfs/cuizaixu_lab/xuhaoshu/DATA_C/projects/efny-pipeline` |
@@ -149,12 +157,22 @@ FC 仅提交 QC 合格被试。完成审计为每个缺失或未完成被试保�
 文件可使用 Windows CRLF。`prepare --subjects` 定义分析清单，`submit --subjects`
 仅缩小本次提交范围，不改变分析清单；不要用小规模测试的清单拟合正式群体阈值。
 核数和队列由配置统一决定，不设置 Slurm time／mem。
+四个阶段仅使用 `q_fat_c`；fMRIPrep 默认 6 个 CPU，其他阶段各 1 个 CPU。
+直接使用 sbatch 入口时，脚本头部也采用上述默认值；容器线程数读取实际 Slurm CPU 配额。
+不自行提高 fMRIPrep 默认并行数，以控制 FreeSurfer 等步骤的内存压力。
 
 需要预览单被试容器命令时：
 
 ```bash
 uv run --offline --no-sync efny-imaging run --stage fmriprep --dataset THU --subject sub-THUXXXX --dry-run
 uv run --offline --no-sync efny-imaging run --stage xcpd --dataset THU --subject sub-THUXXXX --dry-run
+```
+
+以上预览会调用对应 sbatch 脚本输出完整容器命令；也可直接在 Bash 中预览：
+
+```bash
+bash scripts/neuroimaging/run_fmriprep.sbatch THU sub-THUXXXX configs/neuroimaging.json "$PWD" --dry-run
+bash scripts/neuroimaging/run_xcpd.sbatch THU sub-THUXXXX configs/neuroimaging.json "$PWD" --dry-run
 ```
 
 `sub-THUXXXX` 必须替换为准备清单中的真实被试。XY 填写 BIDS 路径后，用相同命令的
@@ -179,6 +197,9 @@ uv run --offline --no-sync python -m unittest discover -s tests -p test_neuroima
 ```
 
 验证使用合成 NIfTI／confounds／CIFTI，覆盖时间轴、首帧 FD、QC、拼接 FC、ROI 顺序、
-无效信号报错、路径配置与完成记录。容器调用在测试中模拟，不能替代集群实测。
+无效信号报错、路径配置与完成记录。安装 Bash 时还会实际执行两份作业脚本，以模拟容器
+验证命令预览、运行后审计、失败状态和锁释放。Windows 下显式设置
+`EFNY_TEST_BASH` 为 Git Bash 的 `bash.exe` 路径；未设置时跳过该项 Bash 集成验证。
+容器调用在测试中模拟，不能替代集群实测。
 测试产物位于 `temp/smoke_neuroimaging_*`，结束立即清理；首次正式批量计算前应在相同
 计算环境提交少量真实被试，检查 fMRIPrep 与 XCP-D HTML、日志和科学 QC。

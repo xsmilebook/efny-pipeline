@@ -41,10 +41,13 @@
 | `q_fat_c` | 8 | 72 | 20 GB | 1536 GB |
 | `q_fat_l` | 3 | 72 | 20 GB | 1536 GB |
 
-- CPU 作业默认允许 `q_fat_c,q_fat`，写为 `#SBATCH -p q_fat_c,q_fat`；有明确任务约束
-  或管理员要求时再固定单一分区。实际分配由调度器决定。
+- 按本项目约定，所有 sbatch 仅使用 `q_fat_c`，写为 `#SBATCH -p q_fat_c`。
+  上表其他分区仅为参考手册的历史资源记录，不用于本项目提交。
 - 按该站点既有约定，不在 sbatch 中设置 `--time`、`--mem` 或 `--mem-per-cpu`；
-  用 `--cpus-per-task` 申请 CPU，内存随申请核数分配。例如 `q_fat_c` 的 24 核约对应 480 GB。
+  用 `--cpus-per-task` 申请 CPU，内存随申请核数分配；按参考记录，`q_fat_c` 的 6 核约对应 120 GB。
+- fMRIPrep 默认每被试申请 6 个 CPU，以控制 FreeSurfer 等步骤的并发内存压力；
+  XCP-D、头动和 FC 默认各 1 个 CPU。fMRIPrep／XCP-D 的 `--nprocs` 读取
+  `SLURM_CPUS_PER_TASK`，`--omp-nthreads=1`。提交配置与脚本头部的默认资源保持一致。
 - 当前 MATLAB 本地进程池任务应使用单节点、`--ntasks=1`，worker 数与
   `SLURM_CPUS_PER_TASK` 对应；不按整节点核数或本地机器设置额外扩展。
 - 登录节点仅做短时、低资源检查。批量转换、并行任务和长时间分析通过 Slurm 执行；

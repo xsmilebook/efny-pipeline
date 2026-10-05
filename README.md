@@ -41,7 +41,11 @@ uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU
 
 待作业完成并核查产物后，按手册继续提交 XCP-D、头动、QC 和 FC。
 四个作业入口为 `scripts/neuroimaging/run_{fmriprep,xcpd,head_motion,rest_fc}.sbatch`；
-Python 科学计算集中在 `src/imaging/`，由 `efny-imaging` 调用。
+全部仅使用 `q_fat_c`。fMRIPrep 默认每被试 6 个 CPU，XCP-D、头动及 FC 默认各 1 个 CPU。
+fMRIPrep 和 XCP-D 的完整容器命令及分析参数直接列在
+[run_fmriprep.sbatch](scripts/neuroimaging/run_fmriprep.sbatch) 和
+[run_xcpd.sbatch](scripts/neuroimaging/run_xcpd.sbatch) 中，可逐项检查和修改。
+共享配置保留路径与参数值；`src/imaging/` 负责输入清单、提交、结果审计及头动／FC 计算。
 本地合成数据验证不等于集群容器验证，首次正式批量运行前需先提交少量被试。
 
 ## MRI series-folder inventory
