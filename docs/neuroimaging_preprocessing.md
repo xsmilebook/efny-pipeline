@@ -67,8 +67,9 @@ XCP-D 26.0.2 默认从镜像中的 `/home/xcp_d/.cache/xcp_d/XCPDAtlases` 与
 fsaverage，生成 91k CIFTI，并保留全部 CompCor components。仅选择 `task-rest`，
 不设置忽略 slice timing 或 fieldmap 的参数。BIDS 验证保持开启；需先解决输入格式错误。
 FreeSurfer 按数据集独立保存。随机种子固定为 42，默认每个被试申请 6 核。
-容器 `--nprocs` 读取实际 Slurm CPU 配额，`--omp-nthreads=1`，避免嵌套线程扩展。
+容器明确使用 `--nprocs 6 --omp-nthreads 6`，与参考脚本一致；不额外注入单线程环境变量。
 参数已对照 [fMRIPrep 25.2.5 使用说明](https://fmriprep.org/en/25.2.5/usage.html)。
+与参考脚本存在的其他参数差异及原因见[逐项对照](neuroimaging_reference_audit.md)。
 
 ### XCP-D
 
@@ -158,7 +159,8 @@ FC 仅提交 QC 合格被试。完成审计为每个缺失或未完成被试保�
 仅缩小本次提交范围，不改变分析清单；不要用小规模测试的清单拟合正式群体阈值。
 核数和队列由配置统一决定，不设置 Slurm time／mem。
 四个阶段仅使用 `q_fat_c`；fMRIPrep 默认 6 个 CPU，其他阶段各 1 个 CPU。
-直接使用 sbatch 入口时，脚本头部也采用上述默认值；容器线程数读取实际 Slurm CPU 配额。
+直接使用 sbatch 入口时，脚本头部也采用上述默认值；fMRIPrep 固定使用 6／6，
+XCP-D 的 `--nprocs` 读取实际 Slurm CPU 配额，默认 1，`--omp-nthreads` 为 1。
 不自行提高 fMRIPrep 默认并行数，以控制 FreeSurfer 等步骤的内存压力。
 
 需要预览单被试容器命令时：

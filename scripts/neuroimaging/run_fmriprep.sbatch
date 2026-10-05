@@ -10,7 +10,6 @@ dataset="${1:?Dataset required}"
 subject="${2:?Subject required}"
 config="${3:-configs/neuroimaging.json}"
 project_root="${4:-$PWD}"
-cpus="${SLURM_CPUS_PER_TASK:-6}"
 
 # Read shared paths and configured values; the scientific workflow is explicit below.
 shell_values=$(uv run --offline --no-sync efny-imaging shell-config \
@@ -35,8 +34,8 @@ command=(
     --fs-license-file /fs_license/license.txt
     --output-spaces "${FMRIPREP_OUTPUT_SPACES[@]}"
     --cifti-output 91k
-    --nprocs "$cpus"
-    --omp-nthreads 1
+    --nprocs 6
+    --omp-nthreads 6
     --return-all-components
     --random-seed "$FMRIPREP_RANDOM_SEED"
     --output-layout bids
@@ -51,7 +50,6 @@ if [[ "${5:-}" == --dry-run ]]; then
     exit 0
 fi
 
-export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 uv sync --check --offline --frozen --python 3.11 --python-platform x86_64-manylinux_2_17
 module load "$SINGULARITY_MODULE"
 
@@ -69,8 +67,7 @@ while IFS= read -r variable; do
     if [[ "${variable,,}" == *proxy* ]]; then unset "$variable"; fi
 done < <(compgen -e)
 export SINGULARITYENV_TEMPLATEFLOW_HOME=/templateflow SINGULARITYENV_SUBJECTS_DIR=/freesurfer
-export SINGULARITYENV_TMPDIR=/tmp SINGULARITYENV_OMP_NUM_THREADS=1
-export SINGULARITYENV_OPENBLAS_NUM_THREADS=1 SINGULARITYENV_MKL_NUM_THREADS=1 SINGULARITYENV_NUMEXPR_NUM_THREADS=1
+export SINGULARITYENV_TMPDIR=/tmp
 tool_version=$(singularity run --cleanenv "$IMAGE" --version)
 
 printf '%q ' "${command[@]}"

@@ -46,8 +46,9 @@
 - 按该站点既有约定，不在 sbatch 中设置 `--time`、`--mem` 或 `--mem-per-cpu`；
   用 `--cpus-per-task` 申请 CPU，内存随申请核数分配；按参考记录，`q_fat_c` 的 6 核约对应 120 GB。
 - fMRIPrep 默认每被试申请 6 个 CPU，以控制 FreeSurfer 等步骤的并发内存压力；
-  XCP-D、头动和 FC 默认各 1 个 CPU。fMRIPrep／XCP-D 的 `--nprocs` 读取
-  `SLURM_CPUS_PER_TASK`，`--omp-nthreads=1`。提交配置与脚本头部的默认资源保持一致。
+  XCP-D、头动和 FC 默认各 1 个 CPU。fMRIPrep 明确使用 `--nprocs 6 --omp-nthreads 6`，
+  与 `data_driven_EF` 参考脚本一致，不注入额外的单线程环境变量。
+  XCP-D 默认 `--nprocs 1 --omp-nthreads 1`。提交配置与脚本头部的默认资源保持一致。
 - 当前 MATLAB 本地进程池任务应使用单节点、`--ntasks=1`，worker 数与
   `SLURM_CPUS_PER_TASK` 对应；不按整节点核数或本地机器设置额外扩展。
 - 登录节点仅做短时、低资源检查。批量转换、并行任务和长时间分析通过 Slurm 执行；
@@ -64,7 +65,7 @@
 集群可用版本及 Parallel Computing Toolbox／worker 许可需在部署时确认；尚未验证 R2022a
 对本项目全部脚本的兼容性。集群使用 Linux 版 `dcm2niix`，记录其实际版本和可执行文件路径。
 
-进程并行时将每个 worker 的 OpenMP、OpenBLAS、MKL 和 NumExpr 线程限制为 1，避免嵌套并行：
+对本项目 MATLAB worker 和头动／FC 计算，将 OpenMP、OpenBLAS、MKL 和 NumExpr 线程限制为 1，避免嵌套并行：
 
 ```bash
 export OMP_NUM_THREADS=1
@@ -72,6 +73,10 @@ export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 ```
+
+以上通用设置不应用于 fMRIPrep；fMRIPrep 的线程选项按参考脚本固定为 6／6。
+Slurm 不设置 `--mem` 的站点约定与应用程序自身的内存参数不同：参考 XCP-D 的
+`--mem-mb 20000` 是应用参数，当前迁移遗漏及其他差异见[参数对照](neuroimaging_reference_audit.md)。
 
 MATLAB 批处理使用 `-batch`，进程池任务可使用 `-singleCompThread` 限制数值计算线程；
 入口仍需显式将 worker 数设置为作业申请值，这些选项不会自动修改当前入口的固定 4 个 worker。

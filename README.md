@@ -42,6 +42,8 @@ uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU
 待作业完成并核查产物后，按手册继续提交 XCP-D、头动、QC 和 FC。
 四个作业入口为 `scripts/neuroimaging/run_{fmriprep,xcpd,head_motion,rest_fc}.sbatch`；
 全部仅使用 `q_fat_c`。fMRIPrep 默认每被试 6 个 CPU，XCP-D、头动及 FC 默认各 1 个 CPU。
+fMRIPrep 沿用参考脚本的 `--nprocs 6 --omp-nthreads 6`；其余与参考项目的差异见
+[参数对照与原因](docs/neuroimaging_reference_audit.md)。
 fMRIPrep 和 XCP-D 的完整容器命令及分析参数直接列在
 [run_fmriprep.sbatch](scripts/neuroimaging/run_fmriprep.sbatch) 和
 [run_xcpd.sbatch](scripts/neuroimaging/run_xcpd.sbatch) 中，可逐项检查和修改。

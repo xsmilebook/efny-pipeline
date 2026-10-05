@@ -241,6 +241,7 @@ class NeuroimagingTests(unittest.TestCase):
             preview = subprocess.run([*arguments, "--dry-run"], env=environment, text=True, capture_output=True, check=True)
             command = shlex.split(preview.stdout.strip())
             self.assertEqual(command[command.index("--nprocs") + 1], "6" if stage == "fmriprep" else "1")
+            self.assertEqual(command[command.index("--omp-nthreads") + 1], "6" if stage == "fmriprep" else "1")
             if stage == "fmriprep":
                 self.assertIn((self.root / "bids").as_posix() + ":/BIDS:ro", command)
                 self.assertNotIn("--skip-bids-validation", command)
