@@ -46,6 +46,12 @@ XCP-D 尚未实测，现有 Windows MATLAB 转换入口仍需单独调整路径�
 
 - 按本项目约定，所有 sbatch 仅使用 `q_fat_c`，写为 `#SBATCH -p q_fat_c`。
   上表其他分区仅为参考手册的历史资源记录，不用于本项目提交。
+- 2026-10-06 用户明确授权本批 THU fMRIPrep 的等待作业使用多分区调度：
+  已将 550 个 PENDING 作业的分区更新为 `q_fat_c,q_fat,q_fat_l`。
+  每名被试仍只有一个原作业编号，由 Slurm 选择实际运行分区；已运行任务继续完成。
+  保留 6 CPU、既有内存请求、工作目录及输出／日志路径，分析命令仍为 6／6。
+  本次为已有批次的调度例外；新提交任务继续读取配置中的 `q_fat_c` 默认值。
+  更新清单与核对结果见[当日会话记录](sessions/2026-10-06_thu_fmriprep_submission.md)。
 - 按该站点既有约定，不在 sbatch 中设置 `--time`、`--mem` 或 `--mem-per-cpu`；
   用 `--cpus-per-task` 申请 CPU，内存随申请核数分配；按参考记录，`q_fat_c` 的 6 核约对应 120 GB。
 - fMRIPrep 默认每被试申请 6 个 CPU，以控制 FreeSurfer 等步骤的并发内存压力；
