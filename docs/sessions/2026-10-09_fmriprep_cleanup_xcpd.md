@@ -51,3 +51,5 @@
 `outputs/logs/neuroimaging/xcpd/THU/rest/workflow_submission_20261009.json`。
 
 刚提交时清理为 PENDING，其余三项为依赖等待；这不表示清理、试跑或全批处理已完成。
+随后确认清理作业在 fat19 RUNNING，输出为 `Deleting 1490 subject cache directories with 8 workers`，
+stderr 暂为空；其余三项仍依赖等待。清理尚未结束，正式审计和 XCP-D 尚未开始。
