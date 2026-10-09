@@ -144,7 +144,11 @@ uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU --
 uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU
 
 # After fMRIPrep jobs finish, audit each expected run before XCP-D submission.
-uv run --offline --no-sync efny-imaging check --stage fmriprep --dataset THU
+sbatch --output=outputs/logs/neuroimaging/fmriprep/THU/rest/reference_check_%j.out \
+  --error=outputs/logs/neuroimaging/fmriprep/THU/rest/reference_check_%j.err \
+  scripts/neuroimaging/check_fmriprep_success.sbatch THU \
+  /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/data_driven_EF/scripts/neuroimaging/check_fmriprep_success.sh
+# Wait for the audit job to succeed before submitting XCP-D.
 uv run --offline --no-sync efny-imaging submit --stage xcpd --dataset THU --dry-run
 uv run --offline --no-sync efny-imaging submit --stage xcpd --dataset THU
 
@@ -193,6 +197,13 @@ bash scripts/neuroimaging/run_xcpd.sbatch THU sub-THUXXXX configs/neuroimaging.j
 Slurm 提交时须保证该根目录存在代码与 `.venv`，正式配置仍使用用户给定的集群根目录。
 
 ## 完成、恢复与验证
+
+fMRIPrep 全批判定先执行参考项目的 `check_fmriprep_success.sh`：HTML 无错误、日志成功结束，
+且每个原始静息态 BOLD 都有对应 fsLR 91k CIFTI、MNI 预处理 BOLD 和 confounds。
+`check_fmriprep_success.sbatch` 保留参考判断逻辑，只适配统一配置路径和本项目下划线日志命名；
+保存实际执行脚本、参考成功／失败名单，再执行原有 `efny-imaging check` 的来源和时间轴检查。
+两套成功／失败名单必须完全一致，否则审计作业失败，不能继续提交下游。
+缓存清理和 XCP-D 试跑后批量提交见[专用说明](fmriprep_cleanup_xcpd.md)。
 
 每个容器运行成功后检查所有预期 run、HTML、dataset description、时间轴和图谱产物，
 再写入模块日志中的 `completed/<subject>.json`，记录实际命令、版本、代码 commit、

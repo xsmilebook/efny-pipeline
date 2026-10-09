@@ -40,6 +40,10 @@ uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU
 ```
 
 待作业完成并核查产物后，按手册继续提交 XCP-D、头动、QC 和 FC。
+fMRIPrep 全批成功判断使用参考项目的 `check_fmriprep_success.sh`，由
+`scripts/neuroimaging/check_fmriprep_success.sbatch` 仅适配路径和日志命名，再补做时间轴审计。
+用户明确授权后的缓存清理及 XCP-D 试跑后提交流程见
+[缓存清理与 XCP-D 提交](docs/fmriprep_cleanup_xcpd.md)。
 四个作业入口为 `scripts/neuroimaging/run_{fmriprep,xcpd,head_motion,rest_fc}.sbatch`；
 全部仅使用 `q_fat_c`。fMRIPrep 默认每被试 6 个 CPU，XCP-D、头动及 FC 默认各 1 个 CPU。
 fMRIPrep 沿用参考脚本的 `--nprocs 6 --omp-nthreads 6`；其余与参考项目的差异见
