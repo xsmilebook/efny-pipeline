@@ -19,7 +19,8 @@ shell_values=$(uv run --offline --no-sync efny-imaging shell-config \
 eval "$shell_values"
 
 atlas_options=()
-for bind in "${ATLAS_BINDS[@]}"; do atlas_options+=(-B "$bind"); done
+# Bash 4.2 treats empty array expansion as unset under nounset.
+for bind in "${ATLAS_BINDS[@]+"${ATLAS_BINDS[@]}"}"; do atlas_options+=(-B "$bind"); done
 atlas_datasets=()
 if [[ "${#ATLAS_DATASETS[@]}" -gt 0 ]]; then
     atlas_datasets=(--datasets "${ATLAS_DATASETS[@]}")
@@ -34,7 +35,7 @@ command=(
     -B "${FS_LICENSE}:/fs_license/license.txt:ro"
     -B "${FREESURFER_DIR}:/freesurfer:ro"
     -B "${TEMPLATEFLOW}:/templateflow:ro"
-    "${atlas_options[@]}"
+    "${atlas_options[@]+"${atlas_options[@]}"}"
     "$IMAGE"
     /fmriprep /output participant
     --participant-label "${subject#sub-}"
@@ -66,7 +67,7 @@ command=(
     --band-stop-min "$XCPD_MOTION_FILTER_BPM"
     --fd-thresh 0
     --atlases "${ATLAS_NAMES[@]}"
-    "${atlas_datasets[@]}"
+    "${atlas_datasets[@]+"${atlas_datasets[@]}"}"
     --output-layout bids
     --notrack
     --random-seed "$XCPD_RANDOM_SEED"

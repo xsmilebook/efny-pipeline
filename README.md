@@ -55,6 +55,7 @@ fMRIPrep 和 XCP-D 的完整容器命令及分析参数直接列在
 [run_fmriprep.sbatch](scripts/neuroimaging/run_fmriprep.sbatch) 和
 [run_xcpd.sbatch](scripts/neuroimaging/run_xcpd.sbatch) 中，可逐项检查和修改。
 共享配置保留路径与参数值；`src/imaging/` 负责输入清单、提交、结果审计及头动／FC 计算。
+XCP-D 的可选图谱挂载参数允许为空，作业脚本兼容集群 Bash 4.2 的严格变量检查。
 本地合成数据验证不等于集群容器验证，首次正式批量运行前需先提交少量被试。
 
 ## MRI series-folder inventory
