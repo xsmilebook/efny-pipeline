@@ -45,10 +45,26 @@ Slurm 作业之间均采用 `afterok:<job_id>`，任何前置作业失败时，�
 试跑和控制链记录在 `outputs/logs/neuroimaging/xcpd/THU/rest/`；
 逐人提交记录及汇总 `submission_batch_after_pilot.csv` 均保留作业编号和实际命令。
 
-此流程不自动执行头动或 FC，也不自动改写原始 745 人输入清单。
-后续全批头动 QC 前需明确采用成功被试分析清单，并记录缺少 T1w 的排除理由。
-
 2026-10-10 用户授权继续执行头动、QC 和 FC。清理及 fMRIPrep 审计已成功完成。
 初次 XCP-D 试跑因 Bash 4.2 的空数组兼容问题在容器启动前失败；
 `run_xcpd.sbatch` 的可选数组现使用兼容展开，不改变科学设置。
 重试及下游作业状态见[当日记录](sessions/2026-10-10_xcpd_retry_downstream.md)。
+
+## 授权后的下游自动执行
+
+`submit_xcpd_after_pilot.sbatch` 通过试跑审计后，先保存原始提交批次的输入清单、被试名单、
+配置、完成审计和参考审计为 `*_original_batch.*`，不覆盖原始审计存档。
+按参考成功名单重新准备 731 人、2459 个 run 的当前分析清单；逐项确认保留的 run 身份完全不变。
+14 名缺少 T1w 且用户决定不再重跑的被试及理由记录在 `downstream_scope.json`。
+单 run 被试仍参与头动汇总和既定数据集 IQR 阈值估计，是否进入 FC 由至少两个合格 run 规则决定。
+
+试跑被试不重复提交；其余 730 人 XCP-D 成功后，`advance_rest_pipeline.sbatch THU xcpd`
+重新执行全批产物、来源、时间轴和图谱检查，确认 731 人全部通过后提交头动任务。
+头动全部成功后运行 `advance_rest_pipeline.sbatch THU head_motion`：验证完成记录，
+执行数据集 QC，仅向符合既定 QC 的被试提交 FC。
+FC 全部成功后运行 `advance_rest_pipeline.sbatch THU rest_fc`，检查每个图谱的 Pearson r／
+Fisher z 矩阵维度、有限值、对称性、对角线、标签顺序、变换关系和合格 run 来源，保存完成审计。
+
+每批提交持久化逐人记录和汇总，审计控制作业依赖该批所有作业的 `afterok`。
+任一步失败则停止推进，不静默排除新失败的 XCP-D 被试，不提前计算 QC 或 FC。
+该控制入口现在包括授权的完整下游链；只提交 XCP-D 时仍使用 `efny-imaging submit --stage xcpd`。

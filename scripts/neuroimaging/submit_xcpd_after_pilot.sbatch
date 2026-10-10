@@ -15,13 +15,15 @@ uv run --offline --no-sync python - "$dataset" "$pilot" <<'PY'
 import csv
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from imaging.config import load_config, module_path
-from imaging.pipeline import assert_completed, input_scans, validate_time_axes
+from imaging.pipeline import assert_completed, input_scans, prepare, validate_time_axes
 
 dataset, pilot = sys.argv[1:]
 config = load_config(Path("configs/neuroimaging.json"), dataset)
@@ -36,6 +38,26 @@ validate_time_axes(config, "xcpd", [scan for scan in scans if scan["subject"] ==
 assert {p.stem for p in (xcpd_logs / "completed").glob("*.json")} == {pilot}, "Unexpected prior XCP-D results"
 assert not list((xcpd_logs / "locks").iterdir()), "Active XCP-D execution remains"
 assert not list(xcpd_logs.glob("submitted_*.csv")), "Unexpected prior batch submissions"
+
+# Preserve the complete submitted cohort before defining the authorized downstream scope.
+full_subjects = sorted({scan["subject"] for scan in scans})
+excluded = sorted(set(full_subjects) - set(subjects))
+assert excluded == (fmriprep_logs / "reference_subjects_failed.txt").read_text().splitlines()
+assert all(not list((Path(config["bids_dir"]) / subject / "anat").glob("*_T1w.nii*"))
+           for subject in excluded), "An excluded subject now has T1w; review the scope"
+for name in ("input_scans.csv", "subjects.txt", "resolved_config.json", "completion_audit.csv", "reference_audit.json"):
+    path = fmriprep_logs / name
+    archive = path.with_name(path.stem + "_original_batch" + path.suffix)
+    assert not archive.exists(), f"Original cohort archive already exists: {archive}"
+    shutil.copyfile(path, archive)
+expected_scans = [scan for scan in scans if scan["subject"] in subjects]
+prepare(config, fmriprep_logs / "reference_subjects_success.txt")
+assert input_scans(config) == expected_scans, "Source run identities changed during cohort preparation"
+scope = dict(original_subject_count=len(full_subjects), analysis_subject_count=len(subjects),
+             excluded_subjects=excluded, exclusion_reason="Missing T1w; user explicitly elected no rerun",
+             job_id=os.environ["SLURM_JOB_ID"], prepared_at_utc=datetime.now(timezone.utc).isoformat())
+(fmriprep_logs / "downstream_scope.json").write_text(json.dumps(scope, indent=2) + "\n")
+
 remaining = xcpd_logs / "subjects_after_pilot.txt"
 remaining.write_text("".join(subject + "\n" for subject in subjects if subject != pilot))
 record = dict(dataset=dataset, pilot=pilot, remaining_subject_count=len(subjects)-1,
@@ -55,7 +77,18 @@ with (xcpd_logs / "submission_batch_after_pilot.csv").open("w", newline="") as s
     writer = csv.DictWriter(stream, fieldnames=["dataset", "subject", "job_id", "command"])
     writer.writeheader()
     writer.writerows(rows)
-record.update(completed_at_utc=datetime.now(timezone.utc).isoformat(), submitted_subject_count=len(rows))
+# Advance only after every subject job succeeds; the next job audits all products again.
+dependency = "afterok:" + ":".join(row["job_id"].split(";")[0] for row in rows)
+audit_command = ["sbatch", "--parsable", "--chdir", config["project_root"],
+                 "--partition", config["slurm"]["partition"], "--cpus-per-task", "1",
+                 "--dependency", dependency, "--kill-on-invalid-dep=yes", "--job-name", "efny_xcpd_audit_head_motion",
+                 "--output", str(xcpd_logs / "audit_head_motion_%j.out"),
+                 "--error", str(xcpd_logs / "audit_head_motion_%j.err"),
+                 str(Path(config["project_root"]) / "scripts/neuroimaging/advance_rest_pipeline.sbatch"),
+                 dataset, "xcpd"]
+audit_job = subprocess.check_output(audit_command, text=True).strip().split(";")[0]
+record.update(completed_at_utc=datetime.now(timezone.utc).isoformat(), submitted_subject_count=len(rows),
+              downstream_audit_job_id=audit_job, downstream_audit_command=shlex.join(audit_command))
 record_path.write_text(json.dumps(record, indent=2) + "\n")
 print(json.dumps(record, indent=2), flush=True)
 PY
