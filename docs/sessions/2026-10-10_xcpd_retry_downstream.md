@@ -101,3 +101,9 @@
 `outputs/logs/neuroimaging/xcpd/THU/rest/retry_eight_20261010.json`，重跑清单见
 同目录 `submission_retry_eight_20261010.csv`。提交后清理和重跑均处于 PENDING，
 此时尚不能宣称目录删除完毕或重跑成功。
+
+随后核对清理作业 `15241968` 已 COMPLETED、退出码 0:0，用时 1 分 3 秒；
+清理日志逐项记录 16 个目标已删除，完成回执为同模块的
+`cleanup_retry_eight_completed_20261010.json`。此结果确认旧目录删除完成，
+不代表后续 XCP-D 重跑完成。Windows 直连 GitHub 推送暂不可达，文档提交通过
+Git bundle 传到干净的集群仓库，再由集群推送；没有同步数据或分析结果。
