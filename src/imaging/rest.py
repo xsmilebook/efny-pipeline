@@ -92,6 +92,37 @@ def compute_motion(config: dict, scans: list[dict], subject: str) -> None:
     write_csv(module_path(config, "head_motion", "tables") / "subjects" / f"{subject}.csv", rows)
 
 
+def write_motion_qc_tables(config: dict, rows: list[dict]) -> None:
+    """Present stored run QC as a path-free run table and one wide row per subject."""
+    groups = defaultdict(list)
+    for row in rows:
+        groups[row["subject"]].append(row)
+    run_numbers = sorted({int(row["run"]) for row in rows})
+    subject_rows = []
+    for subject, run_rows in sorted(groups.items()):
+        by_run = {int(row["run"]): row for row in run_rows}
+        assert len(by_run) == len(run_rows), f"Duplicate subject/run in QC: {subject}"
+        valid_runs = sum(row["run_valid"] == "true" for row in run_rows)
+        summary = dict(
+            dataset=config["dataset"], subject=subject,
+            total_runs=len(run_rows), valid_runs=valid_runs,
+            min_valid_runs=config["head_motion"]["min_valid_runs"],
+            subject_valid=str(valid_runs >= config["head_motion"]["min_valid_runs"]).lower(),
+        )
+        for run in run_numbers:
+            row = by_run.get(run)
+            for source, suffix in (("frames", "frame"), ("mean_fd_mm", "fd"),
+                                   ("high_motion_ratio", "high_motion_ratio"), ("run_valid", "valid")):
+                # An absent run is blank, distinct from an observed run that fails QC.
+                summary[f"rest{run}_{suffix}"] = row[source] if row is not None else ""
+        subject_rows.append(summary)
+    fields = ("dataset", "subject", "run", "scan_id", "frames", "fd_valid_frames", "fd_missing_first",
+              "mean_fd_mm", "high_motion_ratio", "fd_threshold_mm", "dummy_scans", "fd_cutoff_mm", "run_valid")
+    output = module_path(config, "head_motion", "tables")
+    write_csv(output / "run_qc.csv", [{key: row[key] for key in fields} for row in rows])
+    write_csv(output / "subject_qc.csv", subject_rows)
+
+
 def summarize_qc(config: dict, scans: list[dict]) -> None:
     """Apply dataset-specific Q3+1.5 IQR and FD>0.3 mm ratio QC to each rest run."""
     rows = []
@@ -110,31 +141,19 @@ def summarize_qc(config: dict, scans: list[dict]) -> None:
     assert len(values) >= 4 and np.isfinite(values).all(), "IQR QC requires at least four finite run means"
     q1, _, q3 = quantiles(values, n=4, method="inclusive")
     cutoff = q3 + settings["fd_outlier_scale"] * (q3 - q1)
-    groups = defaultdict(list)
     for row in rows:
         valid = float(row["mean_fd_mm"]) <= cutoff and (
             float(row["high_motion_ratio"]) <= settings["high_motion_ratio_threshold"]
         )
         row.update(fd_cutoff_mm=cutoff, run_valid=str(valid).lower())
-        groups[row["subject"]].append(row)
-    subject_rows = []
-    for subject, run_rows in sorted(groups.items()):
-        valid_runs = sum(row["run_valid"] == "true" for row in run_rows)
-        subject_rows.append(dict(
-            dataset=config["dataset"], subject=subject,
-            total_runs=len(run_rows), valid_runs=valid_runs,
-            min_valid_runs=settings["min_valid_runs"],
-            subject_valid=str(valid_runs >= settings["min_valid_runs"]).lower(),
-        ))
+    write_motion_qc_tables(config, rows)
     output = module_path(config, "head_motion", "tables")
-    write_csv(output / "run_qc.csv", rows)
-    write_csv(output / "subject_qc.csv", subject_rows)
     write_csv(output / "qc_thresholds.csv", [dict(
         dataset=config["dataset"], run_count=len(rows), q1_mm=q1, q3_mm=q3,
         iqr_mm=q3 - q1, fd_cutoff_mm=cutoff,
         **settings,
     )])
-    print(f"{config['dataset']}: FD cutoff={cutoff:.6f} mm; wrote {len(subject_rows)} subject QC rows")
+    print(f"{config['dataset']}: FD cutoff={cutoff:.6f} mm; wrote {len(subjects)} subject QC rows")
 
 
 def compute_fc(config: dict, scans: list[dict], subject: str) -> None:

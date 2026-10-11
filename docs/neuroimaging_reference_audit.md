@@ -90,7 +90,7 @@ FC 均按 run 整数顺序拼接原始均值和振幅，计算 Pearson r，再�
 | 容器环境 | 清除 PYTHONPATH；XCP-D 设 TMPDIR／TEMP／TMP | 本项目依赖 --cleanenv，未显式 unset PYTHONPATH；只设 TMPDIR；fMRIPrep 额外设 SUBJECTS_DIR，命令里的 fs-subjects-dir 已指向同一位置 |
 | 完成判据 | HTML 成功文字、日志成功文字与产物存在 | 本项目用进程退出成功、产物／时间轴审计、运行记录及上游完成时间；HTML 只检查存在，不扫描其成功文字，判据并非完全相同 |
 | 日志及记录 | 每被试固定日志名 | 本项目日志含作业编号，记录实际命令、版本、commit；用于追溯和避免混用旧完成状态 |
-| 输入清单与表格格式 | 预存被试名单；头动宽表 rest1…rest4 | 本项目从 BIDS 或显式名单准备清单，要求数据集对应的 sub-THU／sub-XY 前缀，头动为逐 run 长表并附来源；默认样本入口和下游表格接口不同 |
+| 输入清单与表格格式 | 预存被试名单；头动宽表 rest1…rest4 | 本项目从 BIDS 或显式名单准备清单，要求数据集对应的 sub-THU／sub-XY 前缀；2026-10-11 主汇总 `subject_qc.csv` 改为每名被试一行的宽表，附全部已纳入 run 的指标和结论，不展示路径。FC 继续读取无路径的逐 run 表；比例列采用明确的 high_motion_ratio，未改 run 范围或计算精度 |
 
 挂载目标名称、license 挂载从目录改为单文件、重复 `--cleanenv -e` 改为单个 `--cleanenv`
 属于命令表达差异；在同一资源正确映射时不构成分析参数变化。

@@ -116,6 +116,29 @@ FreeSurfer 按数据集独立保存。随机种子固定为 42，默认每个被
 的被试明确标记为不合格，保留 QC 表，不自动删除原始或衍生数据。
 重跑任何头动输入后需重新计算该数据集完整 QC，再提交 FC，避免沿用旧群体阈值。
 
+主要阅读入口为 `outputs/tables/neuroimaging/head_motion/<dataset>/rest/subject_qc.csv`，
+每名被试一行，先列 `dataset`、`subject`、`total_runs`、`valid_runs`、`min_valid_runs`、
+`subject_valid`，再按 run 编号从小到大并排列出：
+
+- `restN_frame`：分析窗口总帧数；
+- `restN_fd`：平均 FD，单位 mm；
+- `restN_high_motion_ratio`：FD > 0.3 mm 的帧比例，0–1；
+- `restN_valid`：该 run 的 QC 结论。
+
+未采集的 run 显示为空，和实际采集但 QC 不合格的 `false` 区分。
+列范围覆盖清单中的全部 run，不限制为 1–4；比例名称明确表示高头动，
+避免参考脚本 `restN_low_ratio` 的名称歧义。保留现有浮点精度，不改变阈值计算。
+该宽表不放入文件路径；供逐 run 审计与 FC 使用的 `run_qc.csv` 也删除
+`source_bold`、`confounds`、`func_dir`。原始来源仍保存在逐被试头动明细、
+输入清单与模块运行记录中，不在主汇总表重复展示。
+
+既有结果可执行下列短时导出命令，它读取已完成的 `run_qc.csv`，只整理表格，
+不重算 FD、IQR 阈值、合格 run 或 FC，也不更新科学完成记录及 QC 来源记录：
+
+```bash
+uv run --offline --no-sync efny-imaging export-motion-qc --dataset THU
+```
+
 ### 功能连接
 
 读取 XCP-D 的 `*_atlas-4S*Parcels_den-91k_stat-mean_timeseries.ptseries.nii`。

@@ -22,7 +22,10 @@ from imaging.pipeline import (
     assert_completed, assert_qc_current, check, discover_scans, finish_container, input_scans, prepare,
     record_path, start_container, submit,
 )
-from imaging.rest import compute_fc, compute_motion, derivative_path, load_ptseries, read_csv, summarize_qc
+from imaging.rest import (
+    compute_fc, compute_motion, derivative_path, load_ptseries, read_csv, summarize_qc,
+    write_motion_qc_tables,
+)
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -135,8 +138,27 @@ class NeuroimagingTests(unittest.TestCase):
         rows = read_csv(module_path(self.config, "head_motion", "tables") / "subject_qc.csv")
         self.assertEqual(rows[0]["subject_valid"], "false")
         self.assertEqual(rows[1]["subject_valid"], "true")
+        self.assertEqual(rows[0]["rest1_valid"], "true")
+        self.assertEqual(rows[0]["rest10_valid"], "false")
+        self.assertEqual(float(rows[0]["rest10_fd"]), 0.8)
         with self.assertRaisesRegex(AssertionError, "failed QC"):
             compute_fc(self.config, self.scans, "sub-THU0001")
+
+    def test_wide_qc_preserves_run_identity_and_absence(self):
+        self.motion_qc()
+        root = module_path(self.config, "head_motion", "tables")
+        runs = read_csv(root / "run_qc.csv")
+        runs = [row for row in runs if not (row["subject"] == "sub-THU0002" and row["run"] == "10")]
+        write_motion_qc_tables(self.config, runs)
+        subjects = read_csv(root / "subject_qc.csv")
+        self.assertEqual(subjects[0]["rest10_fd"], runs[1]["mean_fd_mm"])
+        self.assertEqual(subjects[1]["rest10_valid"], "")
+        self.assertEqual(subjects[1]["valid_runs"], "1")
+        self.assertEqual(subjects[1]["subject_valid"], "false")
+        self.assertNotIn("source_bold", read_csv(root / "run_qc.csv")[0])
+        self.assertNotIn("confounds", subjects[0])
+        with self.assertRaisesRegex(AssertionError, "Duplicate subject/run"):
+            write_motion_qc_tables(self.config, runs + [runs[0]])
 
     def test_fc_matches_concatenation_with_raw_run_amplitudes(self):
         self.motion_qc()

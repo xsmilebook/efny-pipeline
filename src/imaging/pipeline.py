@@ -12,7 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from imaging.config import load_config, module_path, shell_config
-from imaging.rest import compute_fc, compute_motion, derivative_path, load_ptseries, read_csv, summarize_qc, write_csv
+from imaging.rest import (
+    compute_fc, compute_motion, derivative_path, load_ptseries, read_csv, summarize_qc,
+    write_csv, write_motion_qc_tables,
+)
 
 
 STAGES = ("fmriprep", "xcpd", "head_motion", "rest_fc")
@@ -306,7 +309,7 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="EFNY no-session, run-indexed rest neuroimaging pipeline.")
-    parser.add_argument("command", choices=["prepare", "submit", "run", "check", "qc", "show-config", "shell-config", "start-container", "finish-container"])
+    parser.add_argument("command", choices=["prepare", "submit", "run", "check", "qc", "export-motion-qc", "show-config", "shell-config", "start-container", "finish-container"])
     parser.add_argument("--config", type=Path, default=Path("configs/neuroimaging.json"))
     parser.add_argument("--dataset", choices=["THU", "XY"], default="THU")
     parser.add_argument("--project-root", type=Path)
@@ -328,7 +331,14 @@ def main() -> None:
         prepare(config, args.subjects)
     else:
         scans = input_scans(config)
-        if args.command == "qc":
+        if args.command == "export-motion-qc":
+            rows = read_csv(module_path(config, "head_motion", "tables") / "run_qc.csv")
+            expected = {(scan["subject"], scan["scan_id"]) for scan in scans}
+            observed = [(row["subject"], row["scan_id"]) for row in rows]
+            assert len(observed) == len(set(observed)) and set(observed) == expected, "QC scan identities differ"
+            write_motion_qc_tables(config, rows)
+            print(f"{config['dataset']}: exported existing QC for {len({row['subject'] for row in rows})} subjects")
+        elif args.command == "qc":
             current = {subject: assert_completed(config, "head_motion", subject, scans)["completed_at_utc"]
                        for subject in sorted({scan["subject"] for scan in scans})}
             summarize_qc(config, scans)

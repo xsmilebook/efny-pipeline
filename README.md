@@ -59,6 +59,11 @@ XCP-D 的可选图谱挂载参数允许为空，作业脚本兼容集群 Bash 4.
 试跑后的控制入口可按已授权的完整流程依次执行全批 XCP-D 审计、头动、QC、FC 和矩阵审计，
 前置步骤失败时停止推进；731 人下游清单及原始 745 人审计的保存方式见
 [执行说明](docs/fmriprep_cleanup_xcpd.md)。
+头动结果优先查看 `outputs/tables/neuroimaging/head_motion/<dataset>/rest/subject_qc.csv`：
+每名被试一行，包含被试 QC 结论及各 run 的帧数、平均 FD、高头动比例和 QC 结论，
+不包含文件路径。`run_qc.csv` 用于逐 run 核对及 FC 输入，也不包含路径列。
+对既有结果运行 `uv run --offline --no-sync efny-imaging export-motion-qc --dataset THU`
+即可更新表格形式，不重新计算头动阈值或 FC；具体列名见[影像流程](docs/neuroimaging_preprocessing.md)。
 本地合成数据验证不等于集群容器验证，首次正式批量运行前需先提交少量被试。
 
 ## MRI series-folder inventory
