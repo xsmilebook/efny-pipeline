@@ -50,3 +50,12 @@ uv run --offline --no-sync efny-imaging export-motion-qc --dataset THU
 正式导出命令、解析配置、Python／NumPy／NiBabel 版本、commit、干净工作区状态、
 输入范围、输出列名及验证结论已写入集群头动日志模块：
 `outputs/logs/neuroimaging/head_motion/THU/rest/table_export_20261011.json`。
+
+## 协作规则补充
+
+按用户要求，在 `AGENTS.md` 第 6 节增加简洁的结果表可读性指导：
+面向读者的汇总按判断对象组织，被试级质控优先宽表，程序用长表可单独保留；
+主汇总保留理解结果所需字段，追溯信息放日志或来源记录；
+展示调整不得改变科学口径，并区分未采集／缺失与 QC 不合格。
+这不是要求所有数据统一改成宽表，也未增加代码、数据或结果改动。
+本次仅检查文档差异，不重复运行科学计算或测试。
