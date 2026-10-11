@@ -27,3 +27,26 @@
 Git 差异检查通过，所有临时 smoke_neuroimaging 目录已自动清理。
 本地沿用现有 Python 3.12 环境，通过 uv 的离线 no-sync 运行；
 它与项目默认 Python 3.11 的提示不涉及本次依赖或环境改动。
+
+## 集群部署与既有结果导出
+
+代码提交 `2ff7d8d226ef5681bc93df74529180996adfdd49` 已通过 Git 推送，
+集群干净工作区快进部署。使用登录环境，在项目根目录执行：
+
+```bash
+uv run --offline --no-sync efny-imaging export-motion-qc --dataset THU
+```
+
+该操作为短时表格整理，未提交影像处理或 FC 作业。实际更新：
+
+- `outputs/tables/neuroimaging/head_motion/THU/rest/subject_qc.csv`：
+  731 名被试、46 列；先列被试级结论，后列 run 1–10 的指标和 QC。
+- 同目录 `run_qc.csv`：2459 行、13 列，删除汇总表中的路径和 func_dir。
+
+逐项比较导出前后所有保留的 run 字段、被试级原有字段及每个宽表单元格，
+均完全一致。阈值表和 QC 来源记录未改变；FC 完成记录的被试集合仍为 674 人，
+被试排除数仍为 57。没有重算 FD、QC 阈值或 FC，没有同步数据到本地。
+
+正式导出命令、解析配置、Python／NumPy／NiBabel 版本、commit、干净工作区状态、
+输入范围、输出列名及验证结论已写入集群头动日志模块：
+`outputs/logs/neuroimaging/head_motion/THU/rest/table_export_20261011.json`。
