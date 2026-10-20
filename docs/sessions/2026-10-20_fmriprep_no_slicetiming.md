@@ -90,3 +90,48 @@ uv run --python 3.12 --offline --no-sync python -m unittest discover -s tests -p
 
 2 项提交检查、Bash 语法检查和 `git diff --check` 全部通过；临时验证目录无残留。
 本次未提交集群任务或推送代码。
+
+## 正式提交：731 人不做切片时间校正的 fMRIPrep
+
+用户随后明确要求代为提交。2026-10-20 20:52（北京时间）已完成以下操作：
+
+- 本地 `main` 工作区干净，将前述 3 个提交推送到 `origin/main`。
+  通过 `CIBR-login` 连接 `login01`，检查集群工作区干净且分支为 `main` 后，
+  使用 `git pull --ff-only origin main` 更新至 `3b8bf3699b9c013b4f06dbe6faae9486491ac759`。
+- 确认当前账号允许 `high_c`；Slurm `MaxArraySize=18000`，足够容纳本批。
+  原始 731 人清单、fMRIPrep 成功名单和参考成功名单人数一致；新版本尚无结果或提交记录。
+  本批沿用原清单，重新发现 731 人、2459 个静息态 run，均有 T1w 输入。
+- 集群根目录为 `/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline`；输入为
+  `/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new`。
+  确认配置中的 fMRIPrep 镜像、FreeSurfer license 和 TemplateFlow 路径可访问。
+- 集群 Python 为 3.11.15；`uv sync --check --offline --frozen --python 3.11
+  --python-platform x86_64-manylinux_2_17` 和 `uv pip check --python .venv/bin/python`
+  均通过，环境无须更新。镜像配置版本为 fMRIPrep 25.2.5，提交时尚未进行实际容器启动验证。
+
+从集群项目根目录执行的命令为：
+
+```bash
+uv run --offline --no-sync efny-imaging prepare --dataset THU \
+  --subjects outputs/logs/neuroimaging/fmriprep/THU/rest/subjects.txt
+uv run --offline --no-sync efny-imaging run --stage fmriprep --dataset THU \
+  --subject sub-THU202311180133 --dry-run
+uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU --dry-run
+uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU
+```
+
+容器命令预览确认 `--ignore slicetiming`、独立输出／工作／临时／FreeSurfer 目录和
+6／6 线程。正式提交代码为上述 `3b8bf36`，提交时工作区干净。
+Slurm 数组作业 **15427951**，索引 `0-730%48`，`ArrayTaskThrottle=48`，
+分区 `q_fat_c`、QoS `high_c`、每任务 6 核；调度器分配内存规则为每核 20 GB，
+未额外设置内存或运行时限。首次状态为 `PENDING / Resources`，不代表分析完成。
+
+新 fMRIPrep 输出为
+`data/interim/neuroimaging/fmriprep/THU/no_slicetiming/rest/`；
+清单及日志位于 `outputs/logs/neuroimaging/fmriprep/THU/no_slicetiming/rest/`：
+
+- `array_subjects_20261020T125230908442.txt`：固定的数组索引到被试对应关系；
+- `submitted_20261020T125230908442.csv`：731 名被试的数组任务编号与完整 sbatch 命令；
+- `submission_20261020.json`：提交时间、代码、工作区、输入范围及输出位置。
+
+本次只提交 fMRIPrep，未提交下游阶段，旧结果保持原位。
+真实容器版本、完成产物和科学 QC 需在运行后检查；未把已提交或排队解释为已完成。
