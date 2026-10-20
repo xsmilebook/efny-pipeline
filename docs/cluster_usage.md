@@ -63,6 +63,11 @@ XCP-D 尚未实测，现有 Windows MATLAB 转换入口仍需单独调整路径�
   配置项为 `slurm.fmriprep_max_concurrent`，每个任务仍申请 6 核。
   独立提交的多个数组各自限流，不是账号全局上限；直接逐被试 sbatch 不受该限流控制。
   被试顺序固定保存在模块日志下的 `array_subjects_<timestamp>.txt`，运行期间不得修改。
+- 2026-10-20 按用户要求，fMRIPrep 使用 `--qos=high_c`，配置项为
+  `slurm.fmriprep_qos`，主脚本也设置 `#SBATCH --qos=high_c`。
+  `high_c` 为同集群参考文档列出的 QoS 名称，分区仍为 `q_fat_c`；
+  Slurm 的命名服务等级使用 `--qos`，定义见 [sbatch 官方说明](https://slurm.schedmd.com/sbatch.html)。
+  本次未连接集群核验当前账号的 QoS 权限，也未调整已提交任务。
 - 当前 MATLAB 本地进程池任务应使用单节点、`--ntasks=1`，worker 数与
   `SLURM_CPUS_PER_TASK` 对应；不按整节点核数或本地机器设置额外扩展。
 - 登录节点仅做短时、低资源检查。批量转换、并行任务和长时间分析通过 Slurm 执行；

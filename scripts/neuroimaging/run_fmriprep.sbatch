@@ -3,6 +3,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
 #SBATCH -p q_fat_c
+#SBATCH --qos=high_c
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$(realpath "$0")")/../..}"

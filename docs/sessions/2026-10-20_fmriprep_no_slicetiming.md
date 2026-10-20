@@ -68,3 +68,25 @@ README、集群说明和方法文档已同步；本次未连接集群或提交�
 固定数组清单已显式使用 LF 写入，随后完整检查通过。
 临时合成数据已清理；未验证真实调度器的并发行为或当前 `MaxArraySize`，
 未提交集群作业、修改已有任务或推送代码。
+
+## 后续请求：使用 high_c 调度服务等级
+
+用户要求增加 `high_c` 作为优先级规则。修改前基线为 `b61c17b`，工作区干净。
+已读取 `D:\projects\personalized_prediction\docs\cluster_usage.md`，其中 QoS 列将
+`high_c` 列为 `q_fat_c` 的服务等级；已核对 Slurm 官方 `sbatch` 文档，命名 QoS
+通过 `--qos` 请求，而 `--priority` 接受数值或 `TOP`，不接受 QoS 名称。
+
+统一配置新增 `slurm.fmriprep_qos="high_c"`，fMRIPrep 数组提交命令显式传入
+`--qos high_c`，主脚本设置 `#SBATCH --qos=high_c`，使直接 sbatch 也采用该默认值。
+保留分区 `q_fat_c`、48 个并发任务上限、每被试 6 核及所有分析参数和结果路径。
+README 和集群说明同步更新。未连接集群、核验当前账号 QoS 权限或修改已有作业。
+
+本地运行既有提交检查：
+
+```powershell
+uv run --python 3.12 --offline --no-sync python -m unittest discover -s tests -p test_neuroimaging.py -k submission -v
+& 'C:\Program Files\Git\bin\bash.exe' -n scripts/neuroimaging/run_fmriprep.sbatch
+```
+
+2 项提交检查、Bash 语法检查和 `git diff --check` 全部通过；临时验证目录无残留。
+本次未提交集群任务或推送代码。

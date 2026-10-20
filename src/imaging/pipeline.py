@@ -297,6 +297,7 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
         command = [
             "sbatch", "--parsable", "--chdir", str(root), "--partition", config["slurm"]["partition"],
             "--cpus-per-task", str(config["slurm"]["fmriprep_cpus"]),
+            "--qos", config["slurm"]["fmriprep_qos"],
             "--array", f"0-{len(subjects)-1}%{config['slurm']['fmriprep_max_concurrent']}",
             "--output", str(logs / "array_%A_%a.out"), "--error", str(logs / "array_%A_%a.err"),
             str(script), config["dataset"], "--array", str(config_path.resolve()), str(root), str(subjects_path),
