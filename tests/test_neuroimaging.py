@@ -17,7 +17,7 @@ import nibabel as nib
 import numpy as np
 from nibabel.cifti2 import BrainModelAxis, ParcelsAxis, SeriesAxis
 
-from imaging.config import load_config, module_path
+from imaging.config import load_config, module_path, shell_config
 from imaging.pipeline import (
     assert_completed, assert_qc_current, check, discover_scans, finish_container, input_scans, prepare,
     record_path, start_container, submit,
@@ -105,6 +105,26 @@ class NeuroimagingTests(unittest.TestCase):
         (self.root / "bids/sub-THU0001/ses-01").mkdir()
         with self.assertRaisesRegex(AssertionError, "Session"):
             discover_scans(self.config, None)
+
+    def test_no_slicetiming_isolates_products_caches_and_downstream_inputs(self):
+        for module, kind in (("fmriprep", "interim"), ("xcpd", "interim"),
+                             ("head_motion", "tables"), ("rest_fc", "processed"),
+                             ("fmriprep", "logs"), ("fmriprep", "temp")):
+            path = module_path(self.config, module, kind)
+            self.assertEqual(path.parts[-4:], (module, "THU", "no_slicetiming", "rest"))
+        stream = io.StringIO()
+        with redirect_stdout(stream):
+            shell_config(self.config, "xcpd", "sub-THU0001")
+        values = dict(line.split("=", 1) for line in stream.getvalue().splitlines())
+        self.assertEqual(shlex.split(values["FMRIPREP_DIR"])[0],
+                         module_path(self.config, "fmriprep", "interim").as_posix())
+        for name in ("OUTPUT_DIR", "WORK_DIR", "TEMP_DIR", "LOG_DIR", "FREESURFER_DIR"):
+            self.assertIn("/THU/no_slicetiming/", shlex.split(values[name])[0] + "/")
+        no_stc_record = record_path(self.config, "fmriprep", "sub-THU0001")
+        self.config["fmriprep"]["ignore"] = []
+        self.assertEqual(module_path(self.config, "fmriprep", "interim"),
+                         self.root / "data/interim/neuroimaging/fmriprep/THU/rest")
+        self.assertNotEqual(record_path(self.config, "fmriprep", "sub-THU0001"), no_stc_record)
 
     def test_missing_run_is_an_error(self):
         source = Path(self.scans[0]["source_bold"])
@@ -276,7 +296,10 @@ class NeuroimagingTests(unittest.TestCase):
             if stage == "fmriprep":
                 self.assertIn((self.root / "bids").as_posix() + ":/BIDS:ro", command)
                 self.assertIn("--skip-bids-validation", command)
+                self.assertEqual(command[command.index("--ignore") + 1:], ["slicetiming"])
+                self.assertIn(module_path(self.config, stage, "interim").as_posix() + ":/output:rw", command)
             else:
+                self.assertIn(module_path(self.config, "fmriprep", "interim").as_posix() + ":/fmriprep:ro", command)
                 self.assertEqual(command[command.index("--fd-thresh") + 1], "0")
                 self.assertEqual(command[command.index("--nuisance-regressors") + 1], "36P")
             execution = subprocess.run(arguments, env=environment, text=True, capture_output=True)

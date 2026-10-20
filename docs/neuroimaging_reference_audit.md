@@ -22,6 +22,7 @@ fMRIPrep 脚本主动设置的宿主及容器 OpenMP／BLAS 单线程环境变�
 | --- | --- | --- | --- |
 | CPU／线程 | Slurm 6；`--nprocs 6 --omp-nthreads 6` | 本次已恢复一致 | 原来的 6／1 是缺少依据的迁移改动 |
 | BIDS 验证 | `--skip-bids-validation` | 已恢复一致 | 按用户要求跳过验证，运行失败后再检查输入；不单独增加预验证步骤 |
+| 切片时间校正 | 未设置 `--ignore slicetiming` | 2026-10-20 起设置 `--ignore slicetiming` | 用户明确要求关闭；新版本使用独立 `no_slicetiming/` 路径，影响 BOLD 时间序列及下游分析，原结果保留 |
 | 随机种子 | 不指定 | `--random-seed 42` | 此前为重复运行稳定性增加；不等于参考配置，可能改变涉及随机性的步骤，不能据此宣称数值一致 |
 | 日志详细程度 | `--verbose` | 未设置 | 迁移遗漏，仅影响日志详细程度；可恢复，无科学方法变更理由 |
 | 输出布局 | 不指定 | `--output-layout bids` | 该版本默认就是 `bids`，显式化默认值，行为等价 |
@@ -29,8 +30,8 @@ fMRIPrep 脚本主动设置的宿主及容器 OpenMP／BLAS 单线程环境变�
 
 镜像版本 25.2.5、`task-rest`、T1w／MNI152NLin2009cAsym／MNI152NLin6Asym／fsLR／fsaverage
 输出空间、91k CIFTI、全部 CompCor components、FreeSurfer 重建、`--notrack` 和
-`--stop-on-first-crash` 一致。两端均未显式忽略 slice timing 或 fieldmap，也未覆盖
-fMRIPrep 自身的非稳态帧检测、配准自由度或切片时间参考设置。
+`--stop-on-first-crash` 一致。当前本项目显式忽略 slice timing；两端均未忽略 fieldmap，
+也未覆盖 fMRIPrep 自身的非稳态帧检测、配准自由度或切片时间参考设置。
 
 ## XCP-D
 

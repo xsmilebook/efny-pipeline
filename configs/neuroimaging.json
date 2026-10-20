@@ -26,6 +26,7 @@
     "rest_fc_cpus": 1
   },
   "fmriprep": {
+    "ignore": ["slicetiming"],
     "output_spaces": ["T1w", "MNI152NLin2009cAsym", "MNI152NLin6Asym", "fsLR", "fsaverage"],
     "random_seed": 42
   },

@@ -25,6 +25,13 @@ Python 依赖由 `pyproject.toml`、`uv.lock` 管理；原序列目录清单脚�
 `/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new`。
 XY 保留独立配置，`bids_dir` 当前为空，填写后才能运行。
 
+当前主脚本按配置添加 `--ignore slicetiming`。新结果写入
+`data/interim/neuroimaging/fmriprep/THU/no_slicetiming/rest/`；
+FreeSurfer、工作缓存、日志及下游 XCP-D／头动／FC 也使用独立的 `no_slicetiming/` 路径，
+保留原有结果。FreeSurfer 使用新目录，会重新生成解剖重建。若以后将这版作为主分析，
+可继续使用该目录，不必覆盖旧结果。路径和沿用原被试清单的命令见
+[不做切片时间校正的分析版本](docs/neuroimaging_preprocessing.md#不做切片时间校正的分析版本)。
+
 流程仅支持 `sub-*/func/*_task-rest_run-*_bold.nii[.gz]`，不支持 `ses-*` 或多回波输入。
 默认使用 fMRIPrep 25.2.5、XCP-D 26.0.2／36P／0.01–0.1 Hz 带通且不做逐帧 censoring。
 头动按原始 fMRIPrep FD 计算：数据集内 mean FD ≤ Q3 + 1.5 IQR，FD > 0.3 mm 的帧比例 ≤ 25%，
@@ -59,11 +66,12 @@ XCP-D 的可选图谱挂载参数允许为空，作业脚本兼容集群 Bash 4.
 试跑后的控制入口可按已授权的完整流程依次执行全批 XCP-D 审计、头动、QC、FC 和矩阵审计，
 前置步骤失败时停止推进；731 人下游清单及原始 745 人审计的保存方式见
 [执行说明](docs/fmriprep_cleanup_xcpd.md)。
-头动结果优先查看 `outputs/tables/neuroimaging/head_motion/<dataset>/rest/subject_qc.csv`：
+当前版本头动结果优先查看 `outputs/tables/neuroimaging/head_motion/<dataset>/no_slicetiming/rest/subject_qc.csv`：
 每名被试一行，包含被试 QC 结论及各 run 的帧数、平均 FD、高头动比例和 QC 结论，
 不包含文件路径。`run_qc.csv` 用于逐 run 核对及 FC 输入，也不包含路径列。
-对既有结果运行 `uv run --offline --no-sync efny-imaging export-motion-qc --dataset THU`
-即可更新表格形式，不重新计算头动阈值或 FC；具体列名见[影像流程](docs/neuroimaging_preprocessing.md)。
+对当前配置对应的结果运行 `uv run --offline --no-sync efny-imaging export-motion-qc --dataset THU`
+即可更新表格形式，不重新计算头动阈值或 FC；该命令不会读取旧版结果。
+具体列名见[影像流程](docs/neuroimaging_preprocessing.md)。
 本地合成数据验证不等于集群容器验证，首次正式批量运行前需先提交少量被试。
 
 ## MRI series-folder inventory

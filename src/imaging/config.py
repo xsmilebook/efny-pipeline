@@ -19,7 +19,7 @@ def load_config(path: Path, dataset: str, project_root: Path | None = None) -> d
 
 
 def module_path(config: dict, module: str, kind: str) -> Path:
-    """Keep products under their producing module, dataset and rest task."""
+    """Separate no-slice-timing products and their downstream analyses from the original run."""
     roots = {
         "interim": "data/interim/neuroimaging",
         "processed": "data/processed/neuroimaging",
@@ -27,7 +27,10 @@ def module_path(config: dict, module: str, kind: str) -> Path:
         "logs": "outputs/logs/neuroimaging",
         "temp": "temp/neuroimaging",
     }
-    return Path(config["project_root"]) / roots[kind] / module / config["dataset"] / "rest"
+    root = Path(config["project_root"]) / roots[kind] / module / config["dataset"]
+    if "slicetiming" in config["fmriprep"]["ignore"]:
+        root = root / "no_slicetiming"
+    return root / "rest"
 
 
 def shell_config(config: dict, stage: str, subject: str) -> None:
@@ -40,7 +43,7 @@ def shell_config(config: dict, stage: str, subject: str) -> None:
         TEMP_DIR=(module_path(config, stage, "temp") / subject / os.environ.get("SLURM_JOB_ID", "manual")).as_posix(),
         LOG_DIR=module_path(config, stage, "logs").as_posix(),
         FMRIPREP_DIR=module_path(config, "fmriprep", "interim").as_posix(),
-        FREESURFER_DIR=(Path(config["project_root"]) / "data/interim/neuroimaging/freesurfer" / config["dataset"]).as_posix(),
+        FREESURFER_DIR=module_path(config, "freesurfer", "interim").parent.as_posix(),
         IMAGE=tools[stage + "_image"], FS_LICENSE=tools["fs_license"],
         TEMPLATEFLOW=tools["templateflow"], SINGULARITY_MODULE=tools["singularity_module"],
         ATLAS_NAMES=list(config["atlases"]),

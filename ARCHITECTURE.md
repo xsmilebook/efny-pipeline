@@ -91,5 +91,14 @@ fMRIPrep／XCP-D 的分析参数选择和完整容器命令直接保存在对应
 | 各影像模块 | Slurm 日志、完成记录、提交与审计清单 | `outputs/logs/neuroimaging/<module>/<dataset>/rest/` |
 | fmriprep／xcpd | 容器临时目录 | `temp/neuroimaging/<module>/<dataset>/rest/<subject>/<job_id>/` |
 
+上表为原始分析路径。2026-10-20 起，当前配置 `fmriprep.ignore=["slicetiming"]`，
+统一路径函数在所有影像模块的 `<dataset>/` 后插入 `no_slicetiming/`，
+包括衍生数据、FC、QC、日志、工作目录及容器临时目录。例如新的 fMRIPrep 结果为
+`data/interim/neuroimaging/fmriprep/THU/no_slicetiming/rest/`，工作目录为
+`data/interim/neuroimaging/fmriprep/THU/no_slicetiming/work/<subject>/`。
+FreeSurfer 独立写入 `data/interim/neuroimaging/freesurfer/THU/no_slicetiming/`。
+旧路径保留；后续阶段只读取同一分析版本的上游结果，不回退到旧路径。
+该目录可以直接作为主分析目录，无需为切换主分析而移动或覆盖结果。
+
 正式工作目录和容器临时目录不自动删除，便于诊断与恢复；清理仅限明确完成任务的自有目录。
 本地合成验证另使用 `temp/smoke_neuroimaging_*`，测试结束立即清理。

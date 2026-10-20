@@ -29,6 +29,49 @@ censoring 和 run 合并等参数在对应命令中逐项列出，便于科研�
 输入在容器中只读挂载，全部衍生数据、FC、QC 和日志写入项目根目录下的生产模块。
 THU 与 XY 分别建立输入清单、QC 分布和结果，不跨数据集混合。当前不配置数据同步。
 
+### 不做切片时间校正的分析版本
+
+2026-10-20 按用户要求直接修改现有 `run_fmriprep.sbatch`，根据统一配置的
+`fmriprep.ignore=["slicetiming"]` 添加 `--ignore slicetiming`。
+这是相对原分析的明确方法变更：关闭切片时间校正。其余科学参数与资源设置保持原值。
+选项定义已核对 [fMRIPrep 25.2.5 官方说明](https://fmriprep.org/en/25.2.5/usage.html)。
+
+路径函数依据该选项，在各模块的 `<dataset>/` 后插入 `no_slicetiming/`。
+THU 当前使用以下路径，均相对集群项目根目录：
+
+| 用途 | 当前路径 |
+| --- | --- |
+| fMRIPrep 衍生数据与 HTML | `data/interim/neuroimaging/fmriprep/THU/no_slicetiming/rest/` |
+| fMRIPrep 工作缓存 | `data/interim/neuroimaging/fmriprep/THU/no_slicetiming/work/<subject>/` |
+| FreeSurfer | `data/interim/neuroimaging/freesurfer/THU/no_slicetiming/` |
+| fMRIPrep 清单、记录与 Slurm 日志 | `outputs/logs/neuroimaging/fmriprep/THU/no_slicetiming/rest/` |
+| fMRIPrep 容器临时目录 | `temp/neuroimaging/fmriprep/THU/no_slicetiming/rest/<subject>/<job_id>/` |
+| XCP-D | `data/interim/neuroimaging/xcpd/THU/no_slicetiming/rest/` |
+| 头动与 QC | `outputs/tables/neuroimaging/head_motion/THU/no_slicetiming/rest/` |
+| 被试 FC | `data/processed/neuroimaging/rest_fc/THU/no_slicetiming/rest/` |
+
+下游的工作目录、日志、来源表和临时目录同样隔离。FreeSurfer 也使用独立目录，
+因此会重新生成解剖重建，不写入旧版 FreeSurfer 目录。新版本不复用旧工作缓存、
+旧成功记录或旧下游结果；XCP-D 读取新 fMRIPrep，头动和 FC 也沿用同一版本。
+原来的 `<dataset>/rest/` 结果与清单保留，本次仅修改代码与文档，未运行分析。
+
+如需沿用旧分析的被试范围，在集群检查工作区、拉取本次提交并检查环境后执行：
+
+```bash
+cd /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline
+uv run --offline --no-sync efny-imaging prepare --dataset THU \
+  --subjects outputs/logs/neuroimaging/fmriprep/THU/rest/subjects.txt
+uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU --dry-run
+# First submit a small subject list, then audit its actual products before the full batch.
+uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU --subjects <pilot_subjects.txt>
+```
+
+`<pilot_subjects.txt>` 替换为经过审核的小规模被试名单。正式批量提交使用下文的无
+`--subjects` 命令。若需要重新定义研究样本，再显式修改 `prepare --subjects` 的清单。
+把新版本指定为主分析时可以继续使用 `no_slicetiming/`，目录名用于标识方法，
+不代表次要分析。若以后确需覆盖旧结果，应另行明确迁移范围并处理旧版下游；
+不要通过混合复制两个版本的被试目录来切换主分析。
+
 2026-10-06 按用户要求，将集群开发目录与结果根目录统一到上述路径。
 此前 `DATA_C/projects/efny-pipeline` 下的 THU fMRIPrep／FreeSurfer 衍生结果、工作缓存和
 容器临时目录在作业停止后删除；历史提交清单及失败日志保留用于追溯。新批次重新生成
@@ -75,9 +118,10 @@ XCP-D 26.0.2 默认从镜像中的 `/home/xcp_d/.cache/xcp_d/XCPDAtlases` 与
 
 沿用参考版本 25.2.5 和输出空间 T1w、MNI152NLin2009cAsym、MNI152NLin6Asym、fsLR、
 fsaverage，生成 91k CIFTI，并保留全部 CompCor components。仅选择 `task-rest`，
-不设置忽略 slice timing 或 fieldmap 的参数。沿用 `--skip-bids-validation` 跳过 BIDS 验证；
+当前设置 `--ignore slicetiming`，关闭切片时间校正；不忽略 fieldmap。
+沿用 `--skip-bids-validation` 跳过 BIDS 验证；
 不另加预验证步骤，运行失败后再根据日志检查输入格式与元数据。
-FreeSurfer 按数据集独立保存。随机种子固定为 42，默认每个被试申请 6 核。
+FreeSurfer 按数据集与分析版本独立保存。随机种子固定为 42，默认每个被试申请 6 核。
 容器明确使用 `--nprocs 6 --omp-nthreads 6`，与参考脚本一致；不额外注入单线程环境变量。
 参数已对照 [fMRIPrep 25.2.5 使用说明](https://fmriprep.org/en/25.2.5/usage.html)。
 与参考脚本存在的其他参数差异及原因见[逐项对照](neuroimaging_reference_audit.md)。
@@ -116,7 +160,7 @@ FreeSurfer 按数据集独立保存。随机种子固定为 42，默认每个被
 的被试明确标记为不合格，保留 QC 表，不自动删除原始或衍生数据。
 重跑任何头动输入后需重新计算该数据集完整 QC，再提交 FC，避免沿用旧群体阈值。
 
-主要阅读入口为 `outputs/tables/neuroimaging/head_motion/<dataset>/rest/subject_qc.csv`，
+当前版本主要阅读入口为 `outputs/tables/neuroimaging/head_motion/<dataset>/no_slicetiming/rest/subject_qc.csv`，
 每名被试一行，先列 `dataset`、`subject`、`total_runs`、`valid_runs`、`min_valid_runs`、
 `subject_valid`，再按 run 编号从小到大并排列出：
 
@@ -167,8 +211,8 @@ uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU --
 uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU
 
 # After fMRIPrep jobs finish, audit each expected run before XCP-D submission.
-sbatch --output=outputs/logs/neuroimaging/fmriprep/THU/rest/reference_check_%j.out \
-  --error=outputs/logs/neuroimaging/fmriprep/THU/rest/reference_check_%j.err \
+sbatch --output=outputs/logs/neuroimaging/fmriprep/THU/no_slicetiming/rest/reference_check_%j.out \
+  --error=outputs/logs/neuroimaging/fmriprep/THU/no_slicetiming/rest/reference_check_%j.err \
   scripts/neuroimaging/check_fmriprep_success.sbatch THU \
   /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/data_driven_EF/scripts/neuroimaging/check_fmriprep_success.sh
 # Wait for the audit job to succeed before submitting XCP-D.

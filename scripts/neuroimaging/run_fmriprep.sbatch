@@ -45,6 +45,11 @@ command=(
     -w /wd
 )
 
+# Disable the configured workflow steps; slice timing is ignored in the current analysis.
+if (( ${#FMRIPREP_IGNORE[@]} )); then
+    command+=(--ignore "${FMRIPREP_IGNORE[@]}")
+fi
+
 if [[ "${5:-}" == --dry-run ]]; then
     printf '%q ' "${command[@]}"
     printf '\n'
