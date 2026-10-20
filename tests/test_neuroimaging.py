@@ -228,11 +228,33 @@ class NeuroimagingTests(unittest.TestCase):
         output = io.StringIO()
         with redirect_stdout(output):
             submit(self.config, "fmriprep", REPO / "configs/neuroimaging.json", self.scans, None, True)
-        self.assertEqual(output.getvalue().count("sbatch --parsable"), 2)
+        self.assertEqual(output.getvalue().count("sbatch --parsable"), 1)
+        self.assertIn("--array 0-1%48", output.getvalue())
         self.assertIn("--cpus-per-task 6", output.getvalue())
         self.assertIn("--partition q_fat_c ", output.getvalue())
         self.assertNotIn("--time", output.getvalue())
         self.assertNotIn("--mem", output.getvalue())
+        self.assertFalse(module_path(self.config, "fmriprep", "logs").exists())
+
+    def test_array_submission_freezes_subject_order_and_receipts(self):
+        scans = [dict(self.scans[0], subject=f"sub-THU{index:04d}") for index in range(49)]
+        with patch("imaging.pipeline.subprocess.check_output", return_value="12345;cluster\n") as sbatch:
+            submit(self.config, "fmriprep", REPO / "configs/neuroimaging.json", scans, None, False)
+        sbatch.assert_called_once()
+        command = sbatch.call_args.args[0]
+        self.assertEqual(command[command.index("--array") + 1], "0-48%48")
+        frozen = Path(command[-1])
+        self.assertEqual(frozen.read_text(encoding="utf-8").splitlines(), [scan["subject"] for scan in scans])
+        receipts = read_csv(next(module_path(self.config, "fmriprep", "logs").glob("submitted_*.csv")))
+        self.assertEqual([row["job_id"] for row in receipts], [f"12345_{index}" for index in range(49)])
+        self.assertEqual([row["subject"] for row in receipts], frozen.read_text(encoding="utf-8").splitlines())
+        subset = self.root / "selected.txt"
+        subset.write_text("sub-THU0002\nsub-THU0001\n", encoding="utf-8")
+        with patch("imaging.pipeline.subprocess.check_output", return_value="12346\n") as sbatch:
+            submit(self.config, "fmriprep", REPO / "configs/neuroimaging.json", scans, subset, False)
+        frozen_subset = Path(sbatch.call_args.args[0][-1])
+        subset.write_text("sub-THU0000\n", encoding="utf-8")
+        self.assertEqual(frozen_subset.read_text(encoding="utf-8"), "sub-THU0002\nsub-THU0001\n")
 
     def test_completion_tracks_reruns_and_missing_products(self):
         prepare(self.config, None)
@@ -307,6 +329,21 @@ class NeuroimagingTests(unittest.TestCase):
             record = assert_completed(self.config, stage, "sub-THU0001", self.scans)
             self.assertEqual(record["command"], command)
             self.assertFalse((module_path(self.config, stage, "logs") / "locks/sub-THU0001.lock").exists())
+
+        # A reversed frozen list must select its first subject for array task zero.
+        frozen = self.root / "array_subjects.txt"
+        frozen.write_text("sub-THU0002\nsub-THU0001\n", encoding="utf-8", newline="\n")
+        array_arguments = [BASH, wrapper.as_posix(), (REPO / "scripts/neuroimaging/run_fmriprep.sbatch").as_posix(),
+                           "THU", "--array", config_path.as_posix(), self.root.as_posix(), frozen.as_posix()]
+        array_environment = dict(environment, SLURM_ARRAY_TASK_ID="0", SLURM_JOB_ID="12345")
+        execution = subprocess.run(array_arguments, env=array_environment, text=True, capture_output=True)
+        error_log = module_path(self.config, "fmriprep", "logs") / "sub-THU0002_12345.err"
+        self.assertEqual(execution.returncode, 0, execution.stderr + error_log.read_text(encoding="utf-8"))
+        record = assert_completed(self.config, "fmriprep", "sub-THU0002", self.scans)
+        self.assertEqual(record["job_id"], "12345")
+        self.assertEqual(record["command"][record["command"].index("--participant-label") + 1], "THU0002")
+        subject_log = module_path(self.config, "fmriprep", "logs") / "sub-THU0002_12345.out"
+        self.assertIn("--ignore slicetiming", subject_log.read_text(encoding="utf-8"))
 
         # A failed rerun must invalidate the old completion and release its lock.
         (fake_bin / "singularity").write_text(

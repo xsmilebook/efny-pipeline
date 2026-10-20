@@ -55,6 +55,10 @@ fMRIPrep 全批成功判断使用参考项目的 `check_fmriprep_success.sh`，�
 全部仅使用 `q_fat_c`。fMRIPrep 默认每被试 6 个 CPU，XCP-D、头动及 FC 默认各 1 个 CPU。
 fMRIPrep 沿用参考脚本的 `--nprocs 6 --omp-nthreads 6`；其余与参考项目的差异见
 [参数对照与原因](docs/neuroimaging_reference_audit.md)。
+`efny-imaging submit --stage fmriprep` 现在一次提交一个被试作业数组，
+并发上限由 `slurm.fmriprep_max_concurrent=48` 控制（`--array=0-N%48`）。
+每个数组任务仍为一名被试、6 核，其余任务排队。上限针对本次提交的数组，
+多次独立提交或直接逐被试执行 sbatch 不共享该上限。原提交命令无需改变。
 fMRIPrep 跳过 BIDS 验证，运行失败后再检查输入；fMRIPrep 和 XCP-D 均保留参考代理
 `http://10.11.100.5:3128`，显式传入容器环境。
 容器版本检查使用与正式处理相同的挂载，确保启动时能访问 TemplateFlow 缓存。

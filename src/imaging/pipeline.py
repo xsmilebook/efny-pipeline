@@ -267,7 +267,7 @@ def run_stage(config: dict, stage: str, subject: str, scans: list[dict], dry_run
 
 
 def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subjects_file: Path | None, dry_run: bool) -> None:
-    """Submit one Slurm job per eligible subject using explicit stage completion lists."""
+    """Submit fMRIPrep as a throttled subject array; keep individual jobs for downstream stages."""
     if stage == "rest_fc":
         assert_qc_current(config, scans)
     if subjects_file:
@@ -291,6 +291,29 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
         logs.mkdir(parents=True, exist_ok=True)
     submitted = []
     script = root / "scripts/neuroimaging" / f"run_{stage}.sbatch"
+    if stage == "fmriprep":
+        stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')
+        subjects_path = logs / f"array_subjects_{stamp}.txt"
+        command = [
+            "sbatch", "--parsable", "--chdir", str(root), "--partition", config["slurm"]["partition"],
+            "--cpus-per-task", str(config["slurm"]["fmriprep_cpus"]),
+            "--array", f"0-{len(subjects)-1}%{config['slurm']['fmriprep_max_concurrent']}",
+            "--output", str(logs / "array_%A_%a.out"), "--error", str(logs / "array_%A_%a.err"),
+            str(script), config["dataset"], "--array", str(config_path.resolve()), str(root), str(subjects_path),
+        ]
+        if dry_run:
+            print(shlex.join(command))
+        else:
+            # Freeze the selected order before submission; later prepare/subset edits cannot remap tasks.
+            with subjects_path.open("x", encoding="utf-8", newline="\n") as stream:
+                stream.write("\n".join(subjects) + "\n")
+            job = subprocess.check_output(command, text=True).strip().split(";")[0]
+            submitted = [dict(dataset=config["dataset"], subject=subject, job_id=f"{job}_{index}",
+                              command=shlex.join(command)) for index, subject in enumerate(subjects)]
+            write_csv(logs / f"submitted_{stamp}.csv", submitted)
+            print(f"Submitted fMRIPrep array {job}: {len(subjects)} subjects, "
+                  f"max concurrent={config['slurm']['fmriprep_max_concurrent']}")
+        return
     for subject in subjects:
         command = [
             "sbatch", "--parsable", "--chdir", str(root), "--partition", config["slurm"]["partition"],

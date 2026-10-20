@@ -58,6 +58,11 @@ XCP-D 尚未实测，现有 Windows MATLAB 转换入口仍需单独调整路径�
   XCP-D、头动和 FC 默认各 1 个 CPU。fMRIPrep 明确使用 `--nprocs 6 --omp-nthreads 6`，
   与 `data_driven_EF` 参考脚本一致，不注入额外的单线程环境变量。
   XCP-D 默认 `--nprocs 1 --omp-nthreads 1`。提交配置与脚本头部的默认资源保持一致。
+- 2026-10-20 起，`efny-imaging submit --stage fmriprep` 使用 Slurm 被试作业数组，
+  通过 `--array=0-N%48` 限制每个数组最多同时运行 48 个被试。
+  配置项为 `slurm.fmriprep_max_concurrent`，每个任务仍申请 6 核。
+  独立提交的多个数组各自限流，不是账号全局上限；直接逐被试 sbatch 不受该限流控制。
+  被试顺序固定保存在模块日志下的 `array_subjects_<timestamp>.txt`，运行期间不得修改。
 - 当前 MATLAB 本地进程池任务应使用单节点、`--ntasks=1`，worker 数与
   `SLURM_CPUS_PER_TASK` 对应；不按整节点核数或本地机器设置额外扩展。
 - 登录节点仅做短时、低资源检查。批量转换、并行任务和长时间分析通过 Slurm 执行；

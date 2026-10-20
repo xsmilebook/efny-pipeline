@@ -11,6 +11,12 @@ subject="${2:?Subject required}"
 config="${3:-configs/neuroimaging.json}"
 project_root="${4:-$PWD}"
 
+# Array indices refer to the frozen submission list, not a mutable prepare inventory.
+if [[ "$subject" == --array ]]; then
+    mapfile -t array_subjects < "${5:?Array subjects file required}"
+    subject="${array_subjects[SLURM_ARRAY_TASK_ID]}"
+fi
+
 # Read shared paths and configured values; the scientific workflow is explicit below.
 shell_values=$(uv run --offline --no-sync efny-imaging shell-config \
     --stage fmriprep --dataset "$dataset" --subject "$subject" \
@@ -54,6 +60,11 @@ if [[ "${5:-}" == --dry-run ]]; then
     printf '%q ' "${command[@]}"
     printf '\n'
     exit 0
+fi
+
+# Keep subject-named processing logs for the existing completion checker.
+if [[ "${2}" == --array ]]; then
+    exec > "${LOG_DIR}/${subject}_${SLURM_JOB_ID}.out" 2> "${LOG_DIR}/${subject}_${SLURM_JOB_ID}.err"
 fi
 
 uv sync --check --offline --frozen --python 3.11 --python-platform x86_64-manylinux_2_17

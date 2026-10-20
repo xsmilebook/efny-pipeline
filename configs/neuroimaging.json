@@ -21,6 +21,7 @@
   "slurm": {
     "partition": "q_fat_c",
     "fmriprep_cpus": 6,
+    "fmriprep_max_concurrent": 48,
     "xcpd_cpus": 1,
     "head_motion_cpus": 1,
     "rest_fc_cpus": 1
