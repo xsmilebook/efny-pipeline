@@ -8,7 +8,7 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$(realpath "$0")")/../..}"
 dataset="${1:?Dataset required}"
 subject="${2:?Subject required}"
-config="${3:-configs/neuroimaging.json}"
+config="${3:-configs/neuroimaging_stc.json}"
 project_root="${4:-$PWD}"
 cpus="${SLURM_CPUS_PER_TASK:-1}"
 

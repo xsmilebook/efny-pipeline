@@ -26,7 +26,7 @@ from imaging.config import load_config, module_path
 from imaging.pipeline import assert_completed, input_scans, prepare, validate_time_axes
 
 dataset, pilot = sys.argv[1:]
-config = load_config(Path("configs/neuroimaging.json"), dataset)
+config = load_config(Path("configs/neuroimaging_stc.json"), dataset)
 fmriprep_logs = module_path(config, "fmriprep", "logs")
 xcpd_logs = module_path(config, "xcpd", "logs")
 subjects = (fmriprep_logs / "reference_subjects_success.txt").read_text().splitlines()

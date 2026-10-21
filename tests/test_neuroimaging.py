@@ -20,7 +20,7 @@ from nibabel.cifti2 import BrainModelAxis, ParcelsAxis, SeriesAxis
 from imaging.config import load_config, module_path, shell_config
 from imaging.pipeline import (
     assert_completed, assert_qc_current, check, discover_scans, finish_container, input_scans, prepare,
-    record_path, start_container, submit,
+    processing_settings, record_path, start_container, submit,
 )
 from imaging.rest import (
     compute_fc, compute_motion, derivative_path, load_ptseries, read_csv, summarize_qc,
@@ -131,6 +131,53 @@ class NeuroimagingTests(unittest.TestCase):
         source.rename(source.with_name(source.name.replace("_run-1", "")))
         with self.assertRaises(KeyError):
             discover_scans(self.config, None)
+
+    def test_stc_primary_config_preserves_parameters_and_legacy_rest_settings(self):
+        config = load_config(REPO / "configs/neuroimaging_stc.json", "THU", self.root)
+        self.assertEqual(config["fmriprep"]["ignore"], [])
+        self.assertEqual(config["task_fmri"]["tasks"], ["sst", "nback", "switch"])
+        for key in self.config:
+            if key in ("fmriprep", "bids_dir", "datasets"):
+                continue
+            self.assertEqual(config[key], self.config[key])
+        self.assertEqual({k:v for k,v in config["fmriprep"].items() if k != "ignore"},
+                         {k:v for k,v in self.config["fmriprep"].items() if k != "ignore"})
+        self.assertNotIn("ignore", processing_settings(config, "fmriprep")["fmriprep"])
+        self.assertEqual(module_path(config, "fmriprep", "interim"),
+                         self.root / "data/interim/neuroimaging/fmriprep/THU/rest")
+
+    def test_task_inventory_requires_stc_and_keeps_missing_run_entity(self):
+        config = load_config(REPO / "configs/neuroimaging_stc.json", "THU", self.root, "task")
+        config["bids_dir"] = self.config["bids_dir"]
+        selected = self.root / "task_subjects.txt"
+        selected.write_text("sub-THU0001\n", encoding="utf-8")
+        for task in ("sst", "nback"):
+            path = self.root / "bids/sub-THU0001/func" / f"sub-THU0001_task-{task}_bold.nii.gz"
+            nib.save(nib.Nifti1Image(np.zeros((2,2,2,12)), np.eye(4)), path)
+            path.with_name(path.name.removesuffix(".nii.gz") + ".json").write_text(
+                json.dumps(dict(RepetitionTime=2, SliceTiming=[0,1])), encoding="utf-8")
+        scans = discover_scans(config, selected)
+        self.assertEqual([r["task"] for r in scans], ["nback", "sst"])
+        self.assertEqual([r["run"] for r in scans], ["", ""])
+        prepare(config, selected)
+        logs = module_path(config, "fmriprep", "logs")
+        self.assertEqual(json.loads((logs / "bids_filter.json").read_text()),
+                         {"bold":{"task":["sst","nback","switch"]}})
+        preview = io.StringIO()
+        with redirect_stdout(preview):
+            submit(config, "fmriprep", REPO / "configs/neuroimaging_stc.json", scans, None, True)
+        self.assertIn("run_fmriprep_task.sbatch", preview.getvalue())
+        stream = io.StringIO()
+        with redirect_stdout(stream):
+            shell_config(config, "fmriprep", "sub-THU0001")
+        values = dict(line.split("=",1) for line in stream.getvalue().splitlines())
+        self.assertTrue(shlex.split(values["OUTPUT_DIR"])[0].endswith("/fmriprep/THU/task"))
+        self.assertIn("/work_task/", shlex.split(values["WORK_DIR"])[0])
+        self.assertTrue(shlex.split(values["FREESURFER_DIR"])[0].endswith("/freesurfer/THU"))
+        bad = self.root / "bids/sub-THU0001/func/sub-THU0001_task-sst_bold.json"
+        bad.write_text('{"RepetitionTime":2}', encoding="utf-8")
+        with self.assertRaisesRegex(AssertionError, "STC requires SliceTiming"):
+            discover_scans(config, selected)
 
     def test_fd_reference_denominator_and_no_missing_interior(self):
         scan = self.scans[0]
@@ -344,6 +391,46 @@ class NeuroimagingTests(unittest.TestCase):
         self.assertEqual(record["command"][record["command"].index("--participant-label") + 1], "THU0002")
         subject_log = module_path(self.config, "fmriprep", "logs") / "sub-THU0002_12345.out"
         self.assertIn("--ignore slicetiming", subject_log.read_text(encoding="utf-8"))
+
+        # The task worker uses the same scientific settings, selects task BOLD, and retains STC.
+        task_config = json.loads(json.dumps(self.config))
+        task_config.update(scope="task", task_fmri={"tasks":["sst","nback","switch"]})
+        task_config["fmriprep"]["ignore"] = []
+        task_source = self.root / "bids/sub-THU0001/func/sub-THU0001_task-sst_bold.nii.gz"
+        shutil.copyfile(self.scans[0]["source_bold"], task_source)
+        task_source.with_name("sub-THU0001_task-sst_bold.json").write_text(
+            '{"RepetitionTime":2,"SliceTiming":[0,1]}', encoding="utf-8")
+        selected = self.root / "task_subjects.txt"
+        selected.write_text("sub-THU0001\n", encoding="utf-8")
+        prepare(task_config, selected)
+        task_scans = input_scans(task_config)
+        task_root = module_path(task_config, "fmriprep", "interim")
+        task_root.mkdir(parents=True)
+        (task_root / "dataset_description.json").write_text('{"DatasetType":"derivative"}', encoding="utf-8")
+        (task_root / "sub-THU0001.html").write_text("synthetic task report", encoding="utf-8")
+        for suffix in ("space-fsLR_den-91k_bold.dtseries.nii",
+                       "space-MNI152NLin2009cAsym_desc-preproc_bold.nii.gz", "desc-confounds_timeseries.tsv"):
+            dest = derivative_path(task_config, task_scans[0], "fmriprep", suffix)
+            dest.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(derivative_path(self.config,self.scans[0],"fmriprep",suffix),dest)
+        task_metadata = derivative_path(task_config,task_scans[0],"fmriprep",
+                                        "space-MNI152NLin2009cAsym_desc-preproc_bold.json")
+        task_metadata.write_text('{"SliceTimingCorrected":true}',encoding="utf-8")
+        task_config_path = self.root / "task_config.json"
+        task_config_path.write_text(json.dumps(task_config),encoding="utf-8")
+        task_arguments = [BASH,wrapper.as_posix(),(REPO/"scripts/neuroimaging/run_fmriprep_task.sbatch").as_posix(),
+                          "THU","sub-THU0001",task_config_path.as_posix(),self.root.as_posix()]
+        preview = subprocess.run([*task_arguments,"--dry-run"],env=environment,text=True,capture_output=True,check=True)
+        task_command = shlex.split(preview.stdout.strip())
+        self.assertNotIn("--ignore",task_command)
+        self.assertNotIn("--task-id",task_command)
+        self.assertEqual(task_command[task_command.index("--bids-filter-file")+1],"/bids_filter.json")
+        execution = subprocess.run(task_arguments,env=environment,text=True,capture_output=True)
+        self.assertEqual(execution.returncode,0,execution.stderr)
+        self.assertEqual(assert_completed(task_config,"fmriprep","sub-THU0001",task_scans)["command"],task_command)
+        task_metadata.write_text('{"SliceTimingCorrected":false}',encoding="utf-8")
+        with self.assertRaisesRegex(AssertionError,"STC was not performed"):
+            finish_container(task_config,"fmriprep","sub-THU0001",task_scans,task_command,"mock-container")
 
         # A failed rerun must invalidate the old completion and release its lock.
         (fake_bin / "singularity").write_text(

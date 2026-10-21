@@ -23,7 +23,7 @@ from pathlib import Path
 from imaging.config import load_config, module_path
 
 dataset, reference = sys.argv[1:]
-config = load_config(Path("configs/neuroimaging.json"), dataset)
+config = load_config(Path("configs/neuroimaging_stc.json"), dataset)
 root = Path(config["project_root"])
 logs = module_path(config, "fmriprep", "logs")
 source = Path(reference).read_text()

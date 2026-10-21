@@ -30,7 +30,7 @@ from imaging.rest import read_csv, write_csv
 
 dataset, stage = sys.argv[1:]
 assert stage in ("xcpd", "head_motion", "rest_fc"), stage
-config = load_config(Path("configs/neuroimaging.json"), dataset)
+config = load_config(Path("configs/neuroimaging_stc.json"), dataset)
 root = Path(config["project_root"])
 scans = input_scans(config)
 subjects = sorted({scan["subject"] for scan in scans})

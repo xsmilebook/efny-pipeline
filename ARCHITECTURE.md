@@ -11,7 +11,8 @@ efny-pipeline/                  # 项目根目录
 ├── PLAN.md                     # 计划与任务拆解
 ├── ARCHITECTURE.md             # 结构说明（本文）
 ├── configs/                    # 项目配置文件
-│   └── neuroimaging.json        # THU/XY 影像输入、集群根目录、工具与分析参数
+│   ├── neuroimaging_stc.json    # STC 主分析：THU/XY 输入、工具与分析参数
+│   └── neuroimaging.json        # 历史 no-STC 配置，供未结束作业继续读取
 │
 ├── docs/                       # 方法、流程与决策记录
 │   ├── data_dictionary.md      # 数据字典（数据说明）
@@ -31,7 +32,7 @@ efny-pipeline/                  # 项目根目录
 │   └── inventory/              # 问卷与量表处理（预留）
 │
 ├── scripts/                    # 执行入口（本地/HPC/主流程脚本）
-│   ├── neuroimaging/           # fMRIPrep／XCP-D 完整命令及四阶段 sbatch 入口
+│   ├── neuroimaging/           # rest／task fMRIPrep、XCP-D 与下游 sbatch 入口
 │   ├── behavior/
 │   └── inventory/              # 量表处理入口（预留）
 │
@@ -72,7 +73,7 @@ efny-pipeline/                  # 项目根目录
 
 ## 静息态影像生产模块
 
-集群项目根目录由 `configs/neuroimaging.json` 统一指定，默认
+集群项目根目录由主配置 `configs/neuroimaging_stc.json` 统一指定，默认
 `/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline`。
 外部 BIDS 根目录按数据集独立配置，只读使用，不复制到 `data/raw/`。
 模块路径由 `src/imaging/config.py` 统一生成，`<dataset>` 为 THU 或 XY。
@@ -91,14 +92,31 @@ fMRIPrep／XCP-D 的分析参数选择和完整容器命令直接保存在对应
 | 各影像模块 | Slurm 日志、完成记录、提交与审计清单 | `outputs/logs/neuroimaging/<module>/<dataset>/rest/` |
 | fmriprep／xcpd | 容器临时目录 | `temp/neuroimaging/<module>/<dataset>/rest/<subject>/<job_id>/` |
 
-上表为原始分析路径。2026-10-20 起，当前配置 `fmriprep.ignore=["slicetiming"]`，
+上表是 STC 静息态主分析路径。2026-10-21 起，默认配置为
+`configs/neuroimaging_stc.json`，`fmriprep.ignore=[]`，静息态和任务态均启用 STC。
+任务态使用 `--scope task` 和 `scripts/neuroimaging/run_fmriprep_task.sbatch`，
+当前仅支持 fMRIPrep，不套用静息态头动／FC 规则。
+
+| 任务态用途 | 路径（相对项目根目录） |
+| --- | --- |
+| fMRIPrep 衍生数据 | `data/interim/neuroimaging/fmriprep/<dataset>/task/` |
+| 任务态专用工作缓存 | `data/interim/neuroimaging/fmriprep/<dataset>/work_task/<subject>/` |
+| 输入清单、BIDS 过滤文件、作业日志与完成记录 | `outputs/logs/neuroimaging/fmriprep/<dataset>/task/` |
+| 容器临时目录 | `temp/neuroimaging/fmriprep/<dataset>/task/<subject>/<job_id>/` |
+| FreeSurfer | 沿用 STC 目录 `data/interim/neuroimaging/freesurfer/<dataset>/` |
+
+任务态不写入静息态衍生结果或静息态工作缓存。共享 FreeSurfer 是同被试的解剖重建，
+与是否 STC 无关；本轮任务态准备不重新启动静息态任务。
+
+2026-10-20 的历史配置 `configs/neuroimaging.json` 仍保留 `fmriprep.ignore=["slicetiming"]`。
 统一路径函数在所有影像模块的 `<dataset>/` 后插入 `no_slicetiming/`，
 包括衍生数据、FC、QC、日志、工作目录及容器临时目录。例如新的 fMRIPrep 结果为
 `data/interim/neuroimaging/fmriprep/THU/no_slicetiming/rest/`，工作目录为
 `data/interim/neuroimaging/fmriprep/THU/no_slicetiming/work/<subject>/`。
 FreeSurfer 独立写入 `data/interim/neuroimaging/freesurfer/THU/no_slicetiming/`。
 旧路径保留；后续阶段只读取同一分析版本的上游结果，不回退到旧路径。
-该目录可以直接作为主分析目录，无需为切换主分析而移动或覆盖结果。
+该版本当前不用于主分析。取消其等待任务，但正在运行和已经完成的结果、缓存均保留。
+不修改历史配置，确保仍在运行的任务结束时继续写入自己的 no-STC 完成记录。
 
 正式工作目录和容器临时目录不自动删除，便于诊断与恢复；清理仅限明确完成任务的自有目录。
 本地合成验证另使用 `temp/smoke_neuroimaging_*`，测试结束立即清理。

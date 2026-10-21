@@ -1,4 +1,4 @@
-"""Explicit THU/XY rest preprocessing, Slurm submission and completion audits."""
+"""Explicit THU/XY fMRIPrep and resting-state downstream submission and audits."""
 
 import argparse
 import csv
@@ -23,8 +23,10 @@ UPSTREAM = {"fmriprep": (), "xcpd": ("fmriprep",), "head_motion": ("xcpd",), "re
 
 
 def discover_scans(config: dict, subjects_file: Path | None) -> list[dict]:
-    """Inventory no-session, single-echo rest BOLD runs without inferring missing entities."""
+    """Inventory selected single-echo BOLD; task runs may legitimately omit the run entity."""
     bids = Path(config["bids_dir"])
+    task_scope = config.get("scope", "rest") == "task"
+    tasks = config["task_fmri"]["tasks"] if task_scope else ["rest"]
     prefix = config["datasets"][config["dataset"]]["subject_prefix"]
     subjects = (
         subjects_file.read_text(encoding="utf-8-sig").splitlines()
@@ -38,22 +40,33 @@ def discover_scans(config: dict, subjects_file: Path | None) -> list[dict]:
         subject_dir = bids / subject
         assert not list(subject_dir.glob("ses-*")), f"Session directories are unsupported: {subject}"
         subject_scans = []
-        for path in sorted((subject_dir / "func").glob(f"{subject}_task-rest*_bold.nii*")):
+        for path in sorted((subject_dir / "func").glob(f"{subject}_task-*_bold.nii*")):
             stem = path.name.removesuffix(".gz").removesuffix(".nii")
             entities = dict(token.split("-", 1) for token in stem.split("_")[:-1])
-            if entities["task"] != "rest":
+            if entities["task"] not in tasks:
                 continue
             assert "ses" not in entities and "echo" not in entities, f"Unsupported session/echo: {path}"
-            assert entities["run"].isdigit() and int(entities["run"]) > 0, f"Expected numeric run: {path}"
+            run = entities.get("run", "") if task_scope else entities["run"]
+            assert (task_scope and run == "") or (run.isdigit() and int(run) > 0), f"Expected numeric run: {path}"
+            if "slicetiming" not in config["fmriprep"]["ignore"]:
+                metadata = json.loads(path.with_name(stem + ".json").read_text(encoding="utf-8"))
+                assert metadata.get("SliceTiming"), f"STC requires SliceTiming: {path}"
+                tr = metadata["RepetitionTime"]
+                assert tr > 0 and all(0 <= t < tr for t in metadata["SliceTiming"]), f"Invalid SliceTiming/TR: {path}"
             subject_scans.append(dict(
-                dataset=config["dataset"], subject=subject, run=entities["run"],
+                dataset=config["dataset"], subject=subject, run=run,
                 scan_id=stem.removesuffix("_bold"), func_dir="func", source_bold=str(path),
             ))
-        assert subject_scans, f"No task-rest run-* BOLD scans: {subject}"
-        assert len({int(row["run"]) for row in subject_scans}) == len(subject_scans), (
-            f"Repeated rest run numbers: {subject}"
-        )
-        scans.extend(sorted(subject_scans, key=lambda row: int(row["run"])))
+            if task_scope:
+                subject_scans[-1]["task"] = entities["task"]
+        assert subject_scans, f"No selected {tasks} BOLD scans: {subject}"
+        if task_scope:
+            identities = [(row["task"], int(row["run"]) if row["run"] else None) for row in subject_scans]
+            assert len(set(identities)) == len(identities), f"Repeated task/run identities: {subject}"
+            scans.extend(sorted(subject_scans, key=lambda row: (row["task"], int(row["run"]) if row["run"] else 0)))
+        else:
+            assert len({int(row["run"]) for row in subject_scans}) == len(subject_scans), f"Repeated rest run numbers: {subject}"
+            scans.extend(sorted(subject_scans, key=lambda row: int(row["run"])))
     return scans
 
 
@@ -66,7 +79,10 @@ def prepare(config: dict, subjects_file: Path | None) -> None:
         "\n".join(dict.fromkeys(row["subject"] for row in scans)) + "\n", encoding="utf-8"
     )
     (root / "resolved_config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
-    print(f"Prepared {len(scans)} rest runs for {len({row['subject'] for row in scans})} {config['dataset']} subjects")
+    if config.get("scope", "rest") == "task":
+        (root / "bids_filter.json").write_text(
+            json.dumps({"bold": {"task": config["task_fmri"]["tasks"]}}, indent=2) + "\n", encoding="utf-8")
+    print(f"Prepared {len(scans)} {config.get('scope', 'rest')} runs for {len({row['subject'] for row in scans})} {config['dataset']} subjects")
 
 
 def input_scans(config: dict) -> list[dict]:
@@ -86,6 +102,11 @@ def processing_settings(config: dict, stage: str) -> dict:
         "head_motion": ("head_motion", "xcpd"), "rest_fc": ("head_motion", "xcpd", "atlases"),
     }[stage]
     settings = {key: config[key] for key in keys}
+    if stage == "fmriprep" and not config["fmriprep"]["ignore"]:
+        # An empty ignore list is the original STC behavior, including older completion records.
+        settings["fmriprep"] = {key: value for key, value in config["fmriprep"].items() if key != "ignore"}
+    if config.get("scope", "rest") == "task":
+        settings["task_fmri"] = config["task_fmri"]
     if stage in ("fmriprep", "xcpd"):
         settings["image"] = config["tools"][stage + "_image"]
     return settings
@@ -163,6 +184,10 @@ def validate_time_axes(config: dict, stage: str, scans: list[dict]) -> None:
 
     for scan in scans:
         frames = nib.load(scan["source_bold"]).shape[3]
+        if stage == "fmriprep" and "slicetiming" not in config["fmriprep"]["ignore"]:
+            metadata_path = derivative_path(config, scan, stage, "space-MNI152NLin2009cAsym_desc-preproc_bold.json")
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            assert metadata["SliceTimingCorrected"] is True, f"STC was not performed: {scan['scan_id']}"
         confounds = derivative_path(config, scan, "fmriprep", "desc-confounds_timeseries.tsv")
         with confounds.open(encoding="utf-8-sig") as stream:
             records = list(csv.DictReader(stream, delimiter="\t"))
@@ -230,11 +255,12 @@ def finish_container(config: dict, stage: str, subject: str, scans: list[dict], 
 
 
 def run_stage(config: dict, stage: str, subject: str, scans: list[dict], dry_run: bool,
-              config_path: Path = Path("configs/neuroimaging.json")) -> None:
+              config_path: Path = Path("configs/neuroimaging_stc.json")) -> None:
     """Run scientific shell scripts for preprocessing, or Python calculations for head motion and FC."""
     assert any(scan["subject"] == subject for scan in scans), f"Unknown subject: {subject}"
     if stage in ("fmriprep", "xcpd"):
-        script = Path(config["project_root"]) / "scripts/neuroimaging" / f"run_{stage}.sbatch"
+        script_name = "run_fmriprep_task.sbatch" if config.get("scope", "rest") == "task" else f"run_{stage}.sbatch"
+        script = Path(config["project_root"]) / "scripts/neuroimaging" / script_name
         command = ["bash", str(script), config["dataset"], subject,
                    str(config_path.resolve()), config["project_root"]]
         if dry_run:
@@ -291,6 +317,9 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
         logs.mkdir(parents=True, exist_ok=True)
     submitted = []
     script = root / "scripts/neuroimaging" / f"run_{stage}.sbatch"
+    if config.get("scope", "rest") == "task":
+        assert stage == "fmriprep", "Task scope currently supports fMRIPrep only"
+        script = root / "scripts/neuroimaging/run_fmriprep_task.sbatch"
     if stage == "fmriprep":
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')
         subjects_path = logs / f"array_subjects_{stamp}.txt"
@@ -332,9 +361,10 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="EFNY no-session, run-indexed rest neuroimaging pipeline.")
+    parser = argparse.ArgumentParser(description="EFNY fMRIPrep and resting-state downstream pipeline.")
     parser.add_argument("command", choices=["prepare", "submit", "run", "check", "qc", "export-motion-qc", "show-config", "shell-config", "start-container", "finish-container"])
-    parser.add_argument("--config", type=Path, default=Path("configs/neuroimaging.json"))
+    parser.add_argument("--config", type=Path, default=Path("configs/neuroimaging_stc.json"))
+    parser.add_argument("--scope", choices=["rest", "task"], default="rest")
     parser.add_argument("--dataset", choices=["THU", "XY"], default="THU")
     parser.add_argument("--project-root", type=Path)
     parser.add_argument("--stage", choices=STAGES)
@@ -344,7 +374,11 @@ def main() -> None:
     parser.add_argument("--tool-version")
     parser.add_argument("--container-command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    config = load_config(args.config, args.dataset, args.project_root)
+    config = load_config(args.config, args.dataset, args.project_root, args.scope)
+    if args.scope == "task":
+        assert not config["fmriprep"]["ignore"], "Task primary analysis requires STC with an empty ignore list"
+        assert args.stage in (None, "fmriprep"), "Task scope currently supports fMRIPrep only"
+        assert args.command not in ("qc", "export-motion-qc"), "Motion QC/FC rules are rest-only"
     assert isinstance(config["xcpd"]["dummy_scans"], int) and config["xcpd"]["dummy_scans"] >= 0
     if args.command == "show-config":
         print(json.dumps(config, indent=2))

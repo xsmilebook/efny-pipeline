@@ -9,7 +9,7 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$(realpath "$0")")/../..}"
 dataset="${1:?Dataset required}"
 subject="${2:?Subject required}"
-config="${3:-configs/neuroimaging.json}"
+config="${3:-configs/neuroimaging_stc.json}"
 project_root="${4:-$PWD}"
 
 # Array indices refer to the frozen submission list, not a mutable prepare inventory.
@@ -52,7 +52,7 @@ command=(
     -w /wd
 )
 
-# Disable the configured workflow steps; slice timing is ignored in the current analysis.
+# Pass ignored steps only for an explicitly selected historical analysis config.
 if (( ${#FMRIPREP_IGNORE[@]} )); then
     command+=(--ignore "${FMRIPREP_IGNORE[@]}")
 fi

@@ -17,22 +17,30 @@ Python 依赖由 `pyproject.toml`、`uv.lock` 管理；原序列目录清单脚�
 正式运行需记录代码 commit、工作区状态、命令、输入范围与位置、输出位置、软件版本和作业编号。
 下文事件替换的传输说明仅适用于明确要求执行的单次替换，不表示本项目已建立数据同步。
 
-## BIDS 静息态预处理、头动与功能连接
+## BIDS 静息态／任务态预处理、头动与功能连接
 
 完整方法、路径与分阶段提交命令见[静息态影像流程](docs/neuroimaging_preprocessing.md)。
-统一配置为 [configs/neuroimaging.json](configs/neuroimaging.json)，默认集群项目根目录为
+主配置为 [configs/neuroimaging_stc.json](configs/neuroimaging_stc.json)，默认集群项目根目录为
 `/ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline`，THU 的只读 BIDS 输入为
 `/ibmgpfs/cuizaixu_lab/liyang/BrainProject25/Tsinghua_data/BIDS_new`。
 XY 保留独立配置，`bids_dir` 当前为空，填写后才能运行。
 
-当前主脚本按配置添加 `--ignore slicetiming`。新结果写入
-`data/interim/neuroimaging/fmriprep/THU/no_slicetiming/rest/`；
-FreeSurfer、工作缓存、日志及下游 XCP-D／头动／FC 也使用独立的 `no_slicetiming/` 路径，
-保留原有结果。FreeSurfer 使用新目录，会重新生成解剖重建。若以后将这版作为主分析，
-可继续使用该目录，不必覆盖旧结果。路径和沿用原被试清单的命令见
-[不做切片时间校正的分析版本](docs/neuroimaging_preprocessing.md#不做切片时间校正的分析版本)。
+2026-10-21 起，静息态与任务态主分析统一启用 slice timing correction（STC），
+主配置的 `fmriprep.ignore=[]`，不添加 `--ignore slicetiming`。
+静息态沿用 `data/interim/neuroimaging/fmriprep/THU/rest/`；
+任务态独立写入 `data/interim/neuroimaging/fmriprep/THU/task/`。
+历史 [configs/neuroimaging.json](configs/neuroimaging.json) 保留 no-STC 设置，
+供尚在运行的作业完成使用，不作为新主分析的默认配置。
+no-STC 已运行和已完成的数据、缓存均保留。
 
-流程仅支持 `sub-*/func/*_task-rest_run-*_bold.nii[.gz]`，不支持 `ses-*` 或多回波输入。
+任务态专属入口为 [run_fmriprep_task.sbatch](scripts/neuroimaging/run_fmriprep_task.sbatch)，
+明确选择 `sst`、`nback`、`switch`，其余容器分析参数与静息态一致。
+使用 `efny-imaging prepare --scope task` 准备输入清单，
+再使用 `efny-imaging submit --scope task --stage fmriprep` 提交；被试清单需先审核。
+任务态支持不带 `run-*` 的单 run 命名，缺少 STC 元数据时直接报错。
+完整命令、路径及范围说明见[任务态 STC 预处理](docs/task_fmri_preprocessing.md)。
+
+静息态入口仅支持 `sub-*/func/*_task-rest_run-*_bold.nii[.gz]`，不支持 `ses-*` 或多回波输入。
 默认使用 fMRIPrep 25.2.5、XCP-D 26.0.2／36P／0.01–0.1 Hz 带通且不做逐帧 censoring。
 头动按原始 fMRIPrep FD 计算：数据集内 mean FD ≤ Q3 + 1.5 IQR，FD > 0.3 mm 的帧比例 ≤ 25%，
 至少 2 个合格 run。合格 run 按编号拼接计算 Pearson r 与 Fisher z，图谱为
@@ -72,11 +80,11 @@ XCP-D 的可选图谱挂载参数允许为空，作业脚本兼容集群 Bash 4.
 试跑后的控制入口可按已授权的完整流程依次执行全批 XCP-D 审计、头动、QC、FC 和矩阵审计，
 前置步骤失败时停止推进；731 人下游清单及原始 745 人审计的保存方式见
 [执行说明](docs/fmriprep_cleanup_xcpd.md)。
-当前版本头动结果优先查看 `outputs/tables/neuroimaging/head_motion/<dataset>/no_slicetiming/rest/subject_qc.csv`：
+主分析头动结果优先查看 `outputs/tables/neuroimaging/head_motion/<dataset>/rest/subject_qc.csv`：
 每名被试一行，包含被试 QC 结论及各 run 的帧数、平均 FD、高头动比例和 QC 结论，
 不包含文件路径。`run_qc.csv` 用于逐 run 核对及 FC 输入，也不包含路径列。
 对当前配置对应的结果运行 `uv run --offline --no-sync efny-imaging export-motion-qc --dataset THU`
-即可更新表格形式，不重新计算头动阈值或 FC；该命令不会读取旧版结果。
+即可更新表格形式，不重新计算头动阈值或 FC；默认读取 STC 版本。
 具体列名见[影像流程](docs/neuroimaging_preprocessing.md)。
 本地合成数据验证不等于集群容器验证，首次正式批量运行前需先提交少量被试。
 

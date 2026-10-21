@@ -6,10 +6,11 @@ import shlex
 from pathlib import Path
 
 
-def load_config(path: Path, dataset: str, project_root: Path | None = None) -> dict:
+def load_config(path: Path, dataset: str, project_root: Path | None = None, scope: str = "rest") -> dict:
     """Resolve THU/XY inputs without substituting another dataset's BIDS root."""
     config = json.loads(path.read_text(encoding="utf-8"))
     config["dataset"] = dataset
+    config["scope"] = scope
     config["project_root"] = str(project_root or config["project_root"])
     bids_dir = config["datasets"][dataset]["bids_dir"]
     if bids_dir is None:
@@ -19,7 +20,7 @@ def load_config(path: Path, dataset: str, project_root: Path | None = None) -> d
 
 
 def module_path(config: dict, module: str, kind: str) -> Path:
-    """Separate no-slice-timing products and their downstream analyses from the original run."""
+    """Keep rest/task products and historical no-slice-timing results in distinct paths."""
     roots = {
         "interim": "data/interim/neuroimaging",
         "processed": "data/processed/neuroimaging",
@@ -30,16 +31,17 @@ def module_path(config: dict, module: str, kind: str) -> Path:
     root = Path(config["project_root"]) / roots[kind] / module / config["dataset"]
     if "slicetiming" in config["fmriprep"]["ignore"]:
         root = root / "no_slicetiming"
-    return root / "rest"
+    return root / config.get("scope", "rest")
 
 
 def shell_config(config: dict, stage: str, subject: str) -> None:
     """Export configured values and module paths; scientific command lines live in sbatch scripts."""
     tools = config["tools"]
     output = module_path(config, stage, "interim")
+    work_name = "work_task" if config.get("scope", "rest") == "task" else "work"
     values = dict(
         PROJECT_ROOT=Path(config["project_root"]).as_posix(), BIDS_DIR=Path(config["bids_dir"]).as_posix(),
-        OUTPUT_DIR=output.as_posix(), WORK_DIR=(output.parent / "work" / subject).as_posix(),
+        OUTPUT_DIR=output.as_posix(), WORK_DIR=(output.parent / work_name / subject).as_posix(),
         TEMP_DIR=(module_path(config, stage, "temp") / subject / os.environ.get("SLURM_JOB_ID", "manual")).as_posix(),
         LOG_DIR=module_path(config, stage, "logs").as_posix(),
         FMRIPREP_DIR=module_path(config, "fmriprep", "interim").as_posix(),
@@ -49,6 +51,7 @@ def shell_config(config: dict, stage: str, subject: str) -> None:
         ATLAS_NAMES=list(config["atlases"]),
         ATLAS_BINDS=[f"{host}:/atlases/{name}:ro" for name, host in tools["atlas_datasets"].items()],
         ATLAS_DATASETS=[f"{name}=/atlases/{name}" for name in tools["atlas_datasets"]],
+        BIDS_FILTER=(module_path(config, "fmriprep", "logs") / "bids_filter.json").as_posix(),
     )
     values.update({f"{stage}_{key}".upper(): value for key, value in config[stage].items()})
     for name, value in values.items():
