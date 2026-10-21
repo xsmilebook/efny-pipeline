@@ -9,8 +9,9 @@ import shlex
 import shutil
 import subprocess
 import tarfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 
 import nibabel as nib
@@ -127,10 +128,12 @@ def main() -> None:
     record = logs / "refresh.json"
     record.write_text(json.dumps(receipt, indent=2) + "\n")
     rows = []
-    for index, scan in enumerate(scans):
-        rows.append(audit_run(config, scan, args.source))
-        if (index + 1) % 100 == 0:
-            print(f"Audited {index + 1}/{len(scans)} runs", flush=True)
+    workers = int(os.environ["SLURM_CPUS_PER_TASK"])
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        for index, row in enumerate(pool.map(partial(audit_run, config, source_root=args.source), scans), start=1):
+            rows.append(row)
+            if index % 100 == 0:
+                print(f"Audited {index}/{len(scans)} runs", flush=True)
     write_csv(logs / "confounds_audit.csv", rows)
     receipt.update(audit_completed_at_utc=datetime.now(timezone.utc).isoformat(),
                    changed_runs=sum(bool(row["changed_columns"]) for row in rows))
@@ -194,7 +197,7 @@ def main() -> None:
         return str(target)
 
     with (logs / "removed.jsonl").open("w") as stream:
-        with ThreadPoolExecutor(max_workers=int(os.environ["SLURM_CPUS_PER_TASK"])) as pool:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
             for removed in pool.map(remove, targets):
                 stream.write(json.dumps(dict(removed=removed)) + "\n")
                 stream.flush()

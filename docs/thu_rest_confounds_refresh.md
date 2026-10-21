@@ -17,7 +17,8 @@ XCP-D 参数、图谱或头动 QC 规则。task、no-STC、原始 BIDS 和 FreeS
 ## 执行顺序
 
 入口为 `scripts/neuroimaging/refresh_thu_rest_confounds.sbatch`，使用 q_fat_c、8 CPU，
-Python 数值线程为 1，删除工作目录时最多 8 个并行 worker。
+每个进程的数值线程为 1，审计和删除的 worker 数均等于实际申请的 CPU 数；
+可在 sbatch 命令中用 `--cpus-per-task` 明确覆盖默认值。
 
 1. 全批核验源文件集合与既有清单完全一致，TSV、JSON 均逐 run 对应。
    检查原始 BOLD、现有 CIFTI 和替换 TSV 的帧数一致；非异常帧列的顺序及非头动列的数值保持不变。
