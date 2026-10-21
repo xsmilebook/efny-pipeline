@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -35,17 +36,25 @@ def audit_run(config: dict, scan: dict, source_root: Path) -> dict:
     source = source_root / scan["subject"] / scan["func_dir"] / target.name
     columns, old = read_confounds(target)
     new_columns, new = read_confounds(source)
-    assert columns == new_columns, f"Confound columns differ: {source}"
+    old_outliers = [name for name in columns if name.startswith("motion_outlier")]
+    new_outliers = [name for name in new_columns if name.startswith("motion_outlier")]
+    assert all(re.fullmatch(r"motion_outlier\d+", name) for name in old_outliers + new_outliers), source
+    assert [name for name in columns if name not in old_outliers] == [
+        name for name in new_columns if name not in new_outliers], f"Non-outlier confound columns differ: {source}"
     frames = nib.load(scan["source_bold"]).shape[3]
     cifti = derivative_path(config, scan, "fmriprep", "space-fsLR_den-91k_bold.dtseries.nii")
     assert len(old) == len(new) == frames == nib.load(cifti).header.get_axis(0).size, scan["scan_id"]
     motion = [f"{kind}_{axis}" for kind in ("rot", "trans") for axis in "xyz"]
-    allowed = {"framewise_displacement"}
+    allowed = {"framewise_displacement", *old_outliers, *new_outliers}
     for name in motion:
         allowed.update((name, name + "_derivative1", name + "_power2", name + "_derivative1_power2"))
-    changed = [name for index, name in enumerate(columns)
-               if any(a[index] != b[index] for a, b in zip(old, new))]
+    new_positions = {name: index for index, name in enumerate(new_columns)}
+    changed = [name for index, name in enumerate(columns) if name not in new_positions or
+               any(a[index] != b[new_positions[name]] for a, b in zip(old, new))]
+    changed.extend(name for name in new_columns if name not in columns)
     assert set(changed) <= allowed, f"Non-motion confounds changed: {source}: {set(changed) - allowed}"
+    old_fd_index = columns.index("framewise_displacement")
+    columns = new_columns
     values = np.array([[row[columns.index(name)] for name in motion] for row in new], dtype=float)
     assert np.isfinite(values).all(), source
     fd_index = columns.index("framewise_displacement")
@@ -64,10 +73,20 @@ def audit_run(config: dict, scan: dict, source_root: Path) -> dict:
     metadata = json.loads(source.with_suffix(".json").read_text())
     assert metadata["framewise_displacement"]["Units"] == "mm", source
     assert all(metadata[name]["Units"] == ("rad" if name.startswith("rot") else "mm") for name in motion), source
-    old_fd = np.array([row[fd_index] for row in old[1:]], dtype=float)
+    # Corrected FD can legitimately add/remove spike columns; verify the documented rule.
+    dvars = np.array([np.nan if row[columns.index("std_dvars")] in ("n/a", "NaN", "nan", "")
+                      else float(row[columns.index("std_dvars")]) for row in new])
+    spikes = np.array([[float(row[columns.index(name)]) for name in new_outliers] for row in new])
+    assert np.isin(spikes, [0, 1]).all() and (spikes.sum(axis=0) == 1).all(), source
+    assert (spikes.sum(axis=1) <= 1).all(), source
+    expected_spikes = (np.r_[np.nan, fd] > 0.5) | (dvars > 1.5)
+    assert np.array_equal(spikes.any(axis=1), expected_spikes), f"Incorrect motion outlier flags: {source}"
+    assert all(metadata[name]["Description"] == "FD > 0.5 mm or standardized DVARS > 1.5." for name in new_outliers), source
+    old_fd = np.array([row[old_fd_index] for row in old[1:]], dtype=float)
     return dict(subject=scan["subject"], scan_id=scan["scan_id"], frames=frames,
                 changed_columns=";".join(changed), old_mean_fd_mm=float(old_fd.mean()),
-                corrected_mean_fd_mm=float(fd.mean()), source=str(source), target=str(target),
+                corrected_mean_fd_mm=float(fd.mean()), old_motion_outliers=len(old_outliers),
+                corrected_motion_outliers=len(new_outliers), source=str(source), target=str(target),
                 source_size=source.stat().st_size, source_mtime_ns=source.stat().st_mtime_ns,
                 source_json_size=source.with_suffix(".json").stat().st_size,
                 source_json_mtime_ns=source.with_suffix(".json").stat().st_mtime_ns)

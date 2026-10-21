@@ -20,8 +20,10 @@ XCP-D 参数、图谱或头动 QC 规则。task、no-STC、原始 BIDS 和 FreeS
 Python 数值线程为 1，删除工作目录时最多 8 个并行 worker。
 
 1. 全批核验源文件集合与既有清单完全一致，TSV、JSON 均逐 run 对应。
-   检查原始 BOLD、现有 CIFTI 和替换 TSV 的帧数一致；列顺序及非头动列保持不变。
+   检查原始 BOLD、现有 CIFTI 和替换 TSV 的帧数一致；非异常帧列的顺序及非头动列的数值保持不变。
    校验六个头动参数、差分、平方项和 50 mm 半径的 Power FD，及 mm／rad 单位。
+   允许校正 FD 后 `motion_outlier*` 列增减或变化，但必须为不重复的单帧指示列，
+   并准确对应源 JSON 所声明的 FD > 0.5 mm 或标准化 DVARS > 1.5 规则。
 2. 完整审计通过后，压缩备份原 TSV、JSON 与 fMRIPrep 完成记录。
    将源文件复制到目标目录的临时文件，再逐文件原子替换；不改写外部源文件。
    fMRIPrep 原执行时间和版本保持不变，在完成记录中追加 `confounds_override` 来源。

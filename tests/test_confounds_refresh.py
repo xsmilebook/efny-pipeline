@@ -37,9 +37,10 @@ class ConfoundsRefreshTests(unittest.TestCase):
         self.source = self.source_root / "sub-THU1" / "func" / self.target.name
         self.source.parent.mkdir(parents=True)
         motion = [f"{kind}_{axis}" for kind in ("rot", "trans") for axis in "xyz"]
-        values = np.arange(30).reshape(5, 6) / 1000
+        values = np.arange(30).reshape(5, 6) / 10000
         delta = np.diff(values, axis=0)
         data = {"global_signal": [str(x) for x in range(5)], "framewise_displacement": ["n/a", *map(str, np.abs(delta[:, 3:]).sum(axis=1) + 50 * np.abs(delta[:, :3]).sum(axis=1))]}
+        data["std_dvars"] = ["n/a", "0", "0", "0", "0"]
         for index, name in enumerate(motion):
             data[name] = list(map(str, values[:, index]))
             data[name + "_derivative1"] = ["n/a", *map(str, delta[:, index])]
@@ -82,6 +83,28 @@ class ConfoundsRefreshTests(unittest.TestCase):
         self.rows.pop()
         self.write(self.source)
         with self.assertRaises(AssertionError):
+            AUDIT_RUN(self.config, self.scan, self.source_root)
+
+    def test_accept_added_motion_outlier_column(self):
+        self.rows[2]["std_dvars"] = "2.0"
+        self.write(self.target)
+        self.columns.append("motion_outlier00")
+        for index, row in enumerate(self.rows):
+            row["motion_outlier00"] = str(int(index == 2))
+        self.write(self.source)
+        metadata = json.loads(self.source.with_suffix(".json").read_text())
+        metadata["motion_outlier00"] = dict(Description="FD > 0.5 mm or standardized DVARS > 1.5.")
+        self.source.with_suffix(".json").write_text(json.dumps(metadata))
+        result = AUDIT_RUN(self.config, self.scan, self.source_root)
+        self.assertEqual(result["corrected_motion_outliers"], 1)
+        self.assertEqual(result["changed_columns"], "motion_outlier00")
+
+    def test_reject_incorrect_motion_outlier_column(self):
+        self.columns.append("motion_outlier00")
+        for index, row in enumerate(self.rows):
+            row["motion_outlier00"] = str(int(index == 2))
+        self.write(self.source)
+        with self.assertRaisesRegex(AssertionError, "Incorrect motion outlier flags"):
             AUDIT_RUN(self.config, self.scan, self.source_root)
 
 
