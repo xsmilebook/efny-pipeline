@@ -84,3 +84,75 @@ uv run --python 3.12 --offline --no-sync python -m unittest discover -s tests -p
 2026-10-21 17:47（北京时间）复查 no-STC 范围只剩 39 个 RUNNING、无 PENDING；
 此前保留的任务按原设置自然完成，未执行取消 RUNNING 或删除数据的操作。
 没有提交新的 STC task／rest 作业。
+
+## 用户确认：全部 THU 任务影像，准备后直接提交
+
+用户随后回复：检查全部 THU 被试的任务影像，准备后直接提交到集群。
+本节为此前待确定范围的最终执行记录，不再限制为原 731 人。
+
+### 完整输入核对
+
+重新检查全部 765 个 `sub-THU*` 被试目录：
+
+| 输入状态 | 被试数 | 执行决定 |
+| --- | ---: | --- |
+| 至少有一种目标任务 BOLD 且有 T1w | 569 | 提交任务态 fMRIPrep |
+| 有任务 BOLD，但缺少 T1w | 2 | 记录为待补输入，未提交 |
+| 没有 sst／nback／switch BOLD | 194 | 记录为无目标任务影像 |
+
+缺 T1w 者为 `sub-THU202501210530`、`sub-THU202602240899`。
+没有删除任何被试、源数据或历史结果，也没有把缺输入者标记为预处理成功。
+569 人的正式输入共 **1522 个 run**：sst 567、nback 521、switch 434。
+每个已选中 BOLD 的 SliceTiming 数目与 NIfTI 切片数一致，NIfTI／JSON TR 一致，
+切片时间均在 `[0, TR)` 内，BOLD 帧数不少于 5。
+帧数范围为 sst 149–335、nback 20–273、switch 141–209；保留已有短 run，
+不自行删除部分采集数据。此处为输入与 STC 就绪核对，不代表任务行为或最终影像 QC 合格。
+
+### 正式提交与并发限制
+
+2026-10-21 18:08（北京时间）提交数组 **15428647**，索引 `0-568`。
+代码为 `2f2d19a7c75c60ae4eb9a1126967241f5f391c9e`，集群工作区干净，
+离线环境检查通过。依然使用 Python 3.11.15、配置的 fMRIPrep 25.2.5 镜像、
+`q_fat_c`、`high_c` 和每任务 6 核／6／6 线程，其他方法参数与已确认脚本一致。
+
+通过 `prepare(config, subjects_ready_20261021.txt)` 生成正式清单与任务过滤文件，
+实际命令预览通过。提交仍使用 `imaging.pipeline.submit`，scope 为 `task`，
+只在提交时将数组并发值设为当时剩余名额 **15**，不改写共享主配置或分析参数。
+当时保留的 no-STC 任务有 33 个 RUNNING，新数组与它们合计最多 48 个。
+
+调度扩容作业 **15428648** 依赖 `afterany:15427951:15428233`，
+在所有残余 no-STC 任务结束后执行：
+
+```bash
+scontrol update JobId=15428647 ArrayTaskThrottle=48
+```
+
+扩容作业使用 `q_fat_c`、`high_c`、1 核，仅调整新数组的调度并发。
+旧运行任务均未取消；原 no-STC 数据和缓存继续保留。
+提交后新数组先为 PENDING，扩容作业为 PENDING／Dependency；不将排队解释为分析完成。
+
+### 正式来源记录
+
+集群任务态模块日志根目录为
+`outputs/logs/neuroimaging/fmriprep/THU/task/`，包含：
+
+- `all_thu_task_input_audit.csv`：765 人的任务 run 数、T1w 状态和提交状态宽表；
+- `subjects_ready_20261021.txt`：569 人审核后的输入清单；
+- `subjects_blocked_missing_t1_20261021.txt`：两名待补 T1w 者；
+- `input_audit_20261021.json`：代码、时间、输入范围、帧数范围及 STC 元数据核查；
+- `input_scans.csv`、`bids_filter.json`、`resolved_config.json`：正式输入身份、过滤条件和配置；
+- `array_subjects_20261021T100848184824.txt`：数组编号到被试的固定映射；
+- `submitted_20261021T100848184824.csv`：569 人任务编号与完整 sbatch 命令；
+- `submission_task_stc_20261021.json`：提交时间、代码、工作区、并发预算、旧任务与扩容作业。
+
+新任务输出仍为 `data/interim/neuroimaging/fmriprep/THU/task/`，不覆盖 rest 或 no-STC 结果。
+
+### 启动核对
+
+18:10（北京时间）复查，新数组 1 个 RUNNING、568 个 PENDING；旧 no-STC 33 个 RUNNING，
+合计 34 个 fMRIPrep 任务运行，未超过 48。首个任务为 `15428647_0`，
+被试 `sub-THU202311180133`，Slurm 单任务编号 `15428649`，节点 `fat14`。
+实际启动版本为 fMRIPrep 25.2.5，环境只读检查通过，数组启动 stderr 无错误。
+workflow 日志分别为 nback、sst、switch 建立处理分支，均明确写出
+`BOLD series will be slice-timing corrected`，参考偏移为约 0.959–0.96 秒。
+这是工作流构建／启动核对；真实逐 run STC 执行、必需输出和成功完成仍以后续审计为准。
