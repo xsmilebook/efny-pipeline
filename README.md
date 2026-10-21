@@ -86,6 +86,9 @@ XCP-D 的可选图谱挂载参数允许为空，作业脚本兼容集群 Bash 4.
 对当前配置对应的结果运行 `uv run --offline --no-sync efny-imaging export-motion-qc --dataset THU`
 即可更新表格形式，不重新计算头动阈值或 FC；默认读取 STC 版本。
 具体列名见[影像流程](docs/neuroimaging_preprocessing.md)。
+THU 静息态校正头动 confounds 后重算 XCP-D、头动和 FC，使用
+[替换与重算入口](docs/thu_rest_confounds_refresh.md)；该入口先核验全部 run，
+备份原 confounds 和来源记录，再清理旧 XCP-D 缓存与下游结果，并通过真实试跑衔接全批重算。
 本地合成数据验证不等于集群容器验证，首次正式批量运行前需先提交少量被试。
 
 ## MRI series-folder inventory

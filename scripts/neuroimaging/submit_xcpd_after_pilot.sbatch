@@ -8,10 +8,11 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR}"
 dataset="${1:?Dataset required}"
 pilot="${2:?Pilot subject required}"
+scope_mode="${3:-prepare-scope}"
 
 # This job must depend on afterok:<pilot_job>, never afterany.
 uv run --offline --no-sync efny-imaging check --stage xcpd --dataset "$dataset" --subject "$pilot"
-uv run --offline --no-sync python - "$dataset" "$pilot" <<'PY'
+uv run --offline --no-sync python - "$dataset" "$pilot" "$scope_mode" <<'PY'
 import csv
 import json
 import os
@@ -25,7 +26,8 @@ from pathlib import Path
 from imaging.config import load_config, module_path
 from imaging.pipeline import assert_completed, input_scans, prepare, validate_time_axes
 
-dataset, pilot = sys.argv[1:]
+dataset, pilot, scope_mode = sys.argv[1:]
+assert scope_mode in ("prepare-scope", "keep-scope"), scope_mode
 config = load_config(Path("configs/neuroimaging_stc.json"), dataset)
 fmriprep_logs = module_path(config, "fmriprep", "logs")
 xcpd_logs = module_path(config, "xcpd", "logs")
@@ -39,28 +41,32 @@ assert {p.stem for p in (xcpd_logs / "completed").glob("*.json")} == {pilot}, "U
 assert not list((xcpd_logs / "locks").iterdir()), "Active XCP-D execution remains"
 assert not list(xcpd_logs.glob("submitted_*.csv")), "Unexpected prior batch submissions"
 
-# Preserve the complete submitted cohort before defining the authorized downstream scope.
-full_subjects = sorted({scan["subject"] for scan in scans})
-excluded = sorted(set(full_subjects) - set(subjects))
-assert excluded == (fmriprep_logs / "reference_subjects_failed.txt").read_text().splitlines()
-assert all(not list((Path(config["bids_dir"]) / subject / "anat").glob("*_T1w.nii*"))
-           for subject in excluded), "An excluded subject now has T1w; review the scope"
-for name in ("input_scans.csv", "subjects.txt", "resolved_config.json", "completion_audit.csv", "reference_audit.json"):
-    path = fmriprep_logs / name
-    archive = path.with_name(path.stem + "_original_batch" + path.suffix)
-    assert not archive.exists(), f"Original cohort archive already exists: {archive}"
-    shutil.copyfile(path, archive)
-expected_scans = [scan for scan in scans if scan["subject"] in subjects]
-prepare(config, fmriprep_logs / "reference_subjects_success.txt")
-assert input_scans(config) == expected_scans, "Source run identities changed during cohort preparation"
-scope = dict(original_subject_count=len(full_subjects), analysis_subject_count=len(subjects),
-             excluded_subjects=excluded, exclusion_reason="Missing T1w; user explicitly elected no rerun",
-             job_id=os.environ["SLURM_JOB_ID"], prepared_at_utc=datetime.now(timezone.utc).isoformat())
-(fmriprep_logs / "downstream_scope.json").write_text(json.dumps(scope, indent=2) + "\n")
+if scope_mode == "keep-scope":
+    # A confounds-only refresh retains the already approved run inventory and its history.
+    assert sorted({scan["subject"] for scan in scans}) == subjects, "Prepared cohort differs"
+else:
+    # Preserve the complete submitted cohort before defining the authorized downstream scope.
+    full_subjects = sorted({scan["subject"] for scan in scans})
+    excluded = sorted(set(full_subjects) - set(subjects))
+    assert excluded == (fmriprep_logs / "reference_subjects_failed.txt").read_text().splitlines()
+    assert all(not list((Path(config["bids_dir"]) / subject / "anat").glob("*_T1w.nii*"))
+               for subject in excluded), "An excluded subject now has T1w; review the scope"
+    for name in ("input_scans.csv", "subjects.txt", "resolved_config.json", "completion_audit.csv", "reference_audit.json"):
+        path = fmriprep_logs / name
+        archive = path.with_name(path.stem + "_original_batch" + path.suffix)
+        assert not archive.exists(), f"Original cohort archive already exists: {archive}"
+        shutil.copyfile(path, archive)
+    expected_scans = [scan for scan in scans if scan["subject"] in subjects]
+    prepare(config, fmriprep_logs / "reference_subjects_success.txt")
+    assert input_scans(config) == expected_scans, "Source run identities changed during cohort preparation"
+    scope = dict(original_subject_count=len(full_subjects), analysis_subject_count=len(subjects),
+                 excluded_subjects=excluded, exclusion_reason="Missing T1w; user explicitly elected no rerun",
+                 job_id=os.environ["SLURM_JOB_ID"], prepared_at_utc=datetime.now(timezone.utc).isoformat())
+    (fmriprep_logs / "downstream_scope.json").write_text(json.dumps(scope, indent=2) + "\n")
 
 remaining = xcpd_logs / "subjects_after_pilot.txt"
 remaining.write_text("".join(subject + "\n" for subject in subjects if subject != pilot))
-record = dict(dataset=dataset, pilot=pilot, remaining_subject_count=len(subjects)-1,
+record = dict(dataset=dataset, pilot=pilot, scope_mode=scope_mode, remaining_subject_count=len(subjects)-1,
               job_id=os.environ["SLURM_JOB_ID"], started_at_utc=datetime.now(timezone.utc).isoformat(),
               code_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
               tracked_worktree_dirty=bool(subprocess.check_output(
