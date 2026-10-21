@@ -71,3 +71,16 @@ uv run --python 3.12 --offline --no-sync python -m unittest discover -s tests -p
 缺少 STC 元数据时报错、专属 worker 实际命令、完成记录以及实际 STC 标记为 false 时拒绝通过。
 两个 fMRIPrep sbatch 的 Bash 语法检查通过。合成验证不代表真实任务态容器分析完成。
 临时合成测试产物由测试自动清理；正式数据和结果无删除操作。
+
+## 集群同步后的核对
+
+实现提交为 `9d2c4af`，已推送；集群检查工作区干净后使用 `git pull --ff-only` 同步。
+逐项读取已保存的完成记录，34 份历史 no-STC 记录和原 STC 的 731 份记录均与
+各自配置、输入清单兼容，未改写任何完成记录。
+进一步逐 run 读取原 STC 静息态 MNI BOLD JSON，2459 个 run 全部
+`SliceTimingCorrected=true`，无缺失文件。本次为 STC 标记核对，不等于重新执行完整影像 QC。
+集群原生 Bash 下的任务态命令预览通过，确认选择任务过滤文件、不传 ignore slicetiming，
+输出与工作目录正确，其他容器参数保持原值。
+2026-10-21 17:47（北京时间）复查 no-STC 范围只剩 39 个 RUNNING、无 PENDING；
+此前保留的任务按原设置自然完成，未执行取消 RUNNING 或删除数据的操作。
+没有提交新的 STC task／rest 作业。
