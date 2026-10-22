@@ -64,3 +64,8 @@ sbatch --output=outputs/logs/neuroimaging/fmriprep/THU/rest/confounds_refresh_%j
 头动宽表仍为 `outputs/tables/neuroimaging/head_motion/THU/rest/subject_qc.csv`；
 FC 仍为 `data/processed/neuroimaging/rest_fc/THU/rest/` 下三个图谱的 Pearson r／Fisher z。
 本次是否已替换、删除或完成重算，以当日会话记录和 Slurm／产物审计为准。
+
+2026-10-22 的检查发现，重算中 35 人遭遇节点故障，自动重排后被遗留锁阻止启动。
+用户授权清理这些空锁并补提失败者，保留 696 人的成功结果和失败任务的工作缓存；
+新建全批审计依赖全部重试作业，继续原头动和 FC 链。
+实际作业编号及验证见[锁清理和补提记录](sessions/2026-10-22_xcpd_node_failure_retry.md)。
