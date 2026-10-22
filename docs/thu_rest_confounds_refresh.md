@@ -69,3 +69,10 @@ FC 仍为 `data/processed/neuroimaging/rest_fc/THU/rest/` 下三个图谱的 Pea
 用户授权清理这些空锁并补提失败者，保留 696 人的成功结果和失败任务的工作缓存；
 新建全批审计依赖全部重试作业，继续原头动和 FC 链。
 实际作业编号及验证见[锁清理和补提记录](sessions/2026-10-22_xcpd_node_failure_retry.md)。
+
+2026-10-23 复查上述重提后，11 人仍因损坏或不完整中间文件失败。
+用户授权清理这 11 人的 XCP-D 衍生结果及 work/temp 后重新提交，
+使用 `retry_xcpd_clean.sbatch <dataset> <failed-job-csv> <other-unfinished-job-ids>`；
+第四个参数为 `dry-run` 时只验证范围和列出目标，不删除、不提交；默认执行清理和补提。
+其余成功结果及 4 个仍运行任务保留。
+执行范围和作业编号见[损坏缓存清理与重提记录](sessions/2026-10-23_xcpd_clean_retry.md)。
