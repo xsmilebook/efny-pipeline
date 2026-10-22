@@ -197,7 +197,7 @@ cd /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline
 # Build the THU source inventory, without modifying BIDS.
 uv run --offline --no-sync efny-imaging prepare --dataset THU
 
-# Review commands, then submit a subject array with at most 48 concurrent tasks.
+# Review commands, then submit a subject array with at most 72 concurrent tasks.
 uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU --dry-run
 uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU
 
@@ -227,9 +227,9 @@ FC 仅提交 QC 合格被试。完成审计为每个缺失或未完成被试保�
 应先补齐失败任务；若研究者明确决定缩小分析样本，应使用审核后的完整被试名单重新
 `prepare --subjects <path>`，并记录排除理由后重新审计，不自动排除。
 
-fMRIPrep 的提交命令使用 `--array=0-N%48`：每个数组任务对应一名被试，
-最多 48 名被试同时运行，其余排队，具体语义见 [Slurm 官方说明](https://slurm.schedmd.com/job_array.html)。
-上限由 `configs/neuroimaging.json` 的 `slurm.fmriprep_max_concurrent` 控制，
+fMRIPrep 的主分析提交命令使用 `--array=0-N%72`：每个数组任务对应一名被试，
+最多 72 名被试同时运行，其余排队，具体语义见 [Slurm 官方说明](https://slurm.schedmd.com/job_array.html)。
+上限由 `configs/neuroimaging_stc.json` 的 `slurm.fmriprep_max_concurrent` 控制，
 每个任务仍申请 6 核并使用 6／6 线程。该上限只针对单次提交的数组，
 不约束多个独立数组、已提交作业或直接逐被试执行的 sbatch；其余阶段仍逐被试提交。
 当前集群的数组大小限制未实测，正式提交前应核对 Slurm 的 `MaxArraySize` 是否允许该清单。

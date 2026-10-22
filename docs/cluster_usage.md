@@ -59,8 +59,11 @@ XCP-D 尚未实测，现有 Windows MATLAB 转换入口仍需单独调整路径�
   与 `data_driven_EF` 参考脚本一致，不注入额外的单线程环境变量。
   XCP-D 默认 `--nprocs 1 --omp-nthreads 1`。提交配置与脚本头部的默认资源保持一致。
 - 2026-10-20 起，`efny-imaging submit --stage fmriprep` 使用 Slurm 被试作业数组，
-  通过 `--array=0-N%48` 限制每个数组最多同时运行 48 个被试。
-  配置项为 `slurm.fmriprep_max_concurrent`，每个任务仍申请 6 核。
+  最初通过 `--array=0-N%48` 限制每个数组最多同时运行 48 个被试。
+  2026-10-22 按用户要求，主配置 `configs/neuroimaging_stc.json` 的
+  `slurm.fmriprep_max_concurrent` 调整为 72，新提交使用 `--array=0-N%72`，每个任务仍申请 6 核。
+  已有任务态数组 `15428647` 使用 `scontrol update JobId=15428647 ArrayTaskThrottle=72`
+  实时调整；修改配置本身不会改变已提交数组。实际并发仍由可用资源和调度规则决定。
   独立提交的多个数组各自限流，不是账号全局上限；直接逐被试 sbatch 不受该限流控制。
   被试顺序固定保存在模块日志下的 `array_subjects_<timestamp>.txt`，运行期间不得修改。
 - 2026-10-20 按用户要求，fMRIPrep 使用 `--qos=high_c`，配置项为

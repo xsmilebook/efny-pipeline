@@ -64,9 +64,11 @@ fMRIPrep 全批成功判断使用参考项目的 `check_fmriprep_success.sh`，�
 fMRIPrep 沿用参考脚本的 `--nprocs 6 --omp-nthreads 6`；其余与参考项目的差异见
 [参数对照与原因](docs/neuroimaging_reference_audit.md)。
 `efny-imaging submit --stage fmriprep` 现在一次提交一个被试作业数组，
-并发上限由 `slurm.fmriprep_max_concurrent=48` 控制（`--array=0-N%48`）。
+并发上限由主配置的 `slurm.fmriprep_max_concurrent=72` 控制（`--array=0-N%72`）。
 每个数组任务仍为一名被试、6 核，其余任务排队。上限针对本次提交的数组，
 多次独立提交或直接逐被试执行 sbatch 不共享该上限。原提交命令无需改变。
+2026-10-22 已将正在等待的任务态数组 `15428647` 从 48 并发调整为 72；
+更改配置不会自动调整既有数组，实际调度使用 `scontrol update JobId=15428647 ArrayTaskThrottle=72`。
 fMRIPrep 通过 `--qos=high_c` 请求调度服务等级，统一配置为 `slurm.fmriprep_qos`；
 直接提交主脚本也默认使用该 QoS。分区仍为 `q_fat_c`。
 fMRIPrep 跳过 BIDS 验证，运行失败后再检查输入；fMRIPrep 和 XCP-D 均保留参考代理

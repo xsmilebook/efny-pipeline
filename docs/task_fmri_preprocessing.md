@@ -67,7 +67,7 @@ uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU --
 ```
 
 主配置默认使用 STC，不必额外传 `--config`。仍通过作业数组按被试提交、每任务 6 核，
-分区 `q_fat_c`、QoS `high_c`、单数组上限 48。并行上限不跨数组共享，
+分区 `q_fat_c`、QoS `high_c`、单数组上限自 2026-10-22 起为 72。并行上限不跨数组共享，
 如与仍在运行的 no-STC 作业同时提交，应单独控制合计并发。
 任务态缺少部分任务可以保留其现有任务，显式清单中的被试完全没有目标任务则报错；
 不会静默跳过被试。

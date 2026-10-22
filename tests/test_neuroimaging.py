@@ -137,9 +137,12 @@ class NeuroimagingTests(unittest.TestCase):
         self.assertEqual(config["fmriprep"]["ignore"], [])
         self.assertEqual(config["task_fmri"]["tasks"], ["sst", "nback", "switch"])
         for key in self.config:
-            if key in ("fmriprep", "bids_dir", "datasets"):
+            if key in ("fmriprep", "bids_dir", "datasets", "slurm"):
                 continue
             self.assertEqual(config[key], self.config[key])
+        # The active STC cohort has a separately authorized concurrency limit.
+        self.assertEqual({k:v for k,v in config["slurm"].items() if k != "fmriprep_max_concurrent"},
+                         {k:v for k,v in self.config["slurm"].items() if k != "fmriprep_max_concurrent"})
         self.assertEqual({k:v for k,v in config["fmriprep"].items() if k != "ignore"},
                          {k:v for k,v in self.config["fmriprep"].items() if k != "ignore"})
         self.assertNotIn("ignore", processing_settings(config, "fmriprep")["fmriprep"])
