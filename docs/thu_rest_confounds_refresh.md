@@ -74,5 +74,8 @@ FC 仍为 `data/processed/neuroimaging/rest_fc/THU/rest/` 下三个图谱的 Pea
 用户授权清理这 11 人的 XCP-D 衍生结果及 work/temp 后重新提交，
 使用 `retry_xcpd_clean.sbatch <dataset> <failed-job-csv> <other-unfinished-job-ids>`；
 第四个参数为 `dry-run` 时只验证范围和列出目标，不删除、不提交；默认执行清理和补提。
+用户明确要求停止卡住作业后，可在第四个参数 `execute` 或 `dry-run` 后，
+显式传入第五个参数 `CANCELLED`。入口要求旧作业已完全取消且无对应活动作业，才允许清理；
+默认仍只接受 FAILED／1:0，不自动停止任何作业。
 其余成功结果及 4 个仍运行任务保留。
 执行范围和作业编号见[损坏缓存清理与重提记录](sessions/2026-10-23_xcpd_clean_retry.md)。

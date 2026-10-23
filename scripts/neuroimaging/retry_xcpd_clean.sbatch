@@ -10,9 +10,10 @@ dataset="${1:?Dataset required}"
 failed_manifest="${2:?Failed-job CSV required}"
 other_jobs="${3:?Other unfinished-job IDs file required}"
 mode="${4:-execute}"
+terminal_state="${5:-FAILED}"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 uv sync --check --offline --frozen --python 3.11 --python-platform x86_64-manylinux_2_17
-uv run --offline --no-sync python - "$dataset" "$failed_manifest" "$other_jobs" "$mode" <<'PY'
+uv run --offline --no-sync python - "$dataset" "$failed_manifest" "$other_jobs" "$mode" "$terminal_state" <<'PY'
 import json
 import os
 import shlex
@@ -27,8 +28,9 @@ from imaging.config import load_config, module_path
 from imaging.pipeline import input_scans, submit
 from imaging.rest import read_csv, write_csv
 
-dataset, failed_manifest, other_jobs, mode = sys.argv[1:]
+dataset, failed_manifest, other_jobs, mode, terminal_state = sys.argv[1:]
 assert mode in ("execute", "dry-run"), mode
+assert terminal_state in ("FAILED", "CANCELLED"), terminal_state
 config_path = Path("configs/neuroimaging_stc.json").resolve()
 config = load_config(config_path, dataset)
 root = Path(config["project_root"]).resolve()
@@ -44,7 +46,12 @@ old_ids = [row["job_id"].split(";")[0] for row in failed]
 accounting = subprocess.check_output(["sacct", "-X", "-n", "-P", "-j", ",".join(old_ids),
                                       "--format=JobIDRaw,State%25,ExitCode"], text=True)
 states = [line.split("|") for line in accounting.splitlines() if line.strip()]
-assert {row[0] for row in states} == set(old_ids) and all(row[1:3] == ["FAILED", "1:0"] for row in states), states
+assert {row[0] for row in states} == set(old_ids), states
+if terminal_state == "FAILED":
+    assert all(row[1:3] == ["FAILED", "1:0"] for row in states), states
+else:
+    # Explicitly requested cancellation must be complete before any selected cache is removed.
+    assert all(row[1].split()[0] == "CANCELLED" for row in states), states
 wait_ids = Path(other_jobs).read_text().splitlines()
 assert all(job.isdigit() for job in wait_ids) and not set(wait_ids) & set(old_ids)
 active = subprocess.check_output(["squeue", "-h", "-u", os.environ["USER"], "-n", "run_xcpd.sbatch", "-o", "%i"], text=True)
@@ -70,6 +77,7 @@ record = dict(job_id=job, started_at_utc=datetime.now(timezone.utc).isoformat(),
               code_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
               worktree_dirty=bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()),
               resolved_config=config, workers=int(os.environ["SLURM_CPUS_PER_TASK"]),
+              required_terminal_state=terminal_state, verified_job_states=states,
               analysis_parameters_changed=False, command=sys.argv)
 record_path.write_text(json.dumps(record, indent=2) + "\n")
 for subject in subjects:
