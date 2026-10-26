@@ -110,6 +110,37 @@ verifyEqual(testCase, fileread(sentinel), before);
 end
 
 
+function testMissingPsychFolderDoesNotBlockOtherSubjects(testCase)
+d = testCase.TestData;
+missingSubject = 'THU_20260728_1005_MISSING';
+mkdir(fullfile(d.raw, missingSubject));
+verifyWarning(testCase, @() extract_psychopy_csv(d.raw, d.output), ...
+    'PSYCHOPY:MissingPsychFolder');
+manifest = jsondecode(fileread(fullfile(d.output, 'selection_log.json')));
+entries = manifest.selection;
+missing = strcmp({entries.subject}, missingSubject);
+verifyEqual(testCase, nnz(missing), 3);
+verifyEqual(testCase, string({entries(missing).status}), ...
+    repmat("missing_psych_folder", 1, 3));
+verifyEqual(testCase, nnz(strcmp({entries.status}, 'selected')), 3);
+files = dir(fullfile(d.output, d.subject, 'PSYCH', '*.csv'));
+verifyEqual(testCase, numel(files), 3);
+verifyFalse(testCase, isfolder(fullfile(d.output, missingSubject)));
+end
+
+
+function testAllMissingPsychFoldersStillWriteLog(testCase)
+d = testCase.TestData;
+rmdir(d.psychDir, 's');
+verifyWarning(testCase, @() extract_psychopy_csv(d.raw, d.output), ...
+    'PSYCHOPY:MissingPsychFolder');
+manifest = jsondecode(fileread(fullfile(d.output, 'selection_log.json')));
+verifyEqual(testCase, string({manifest.selection.status}), ...
+    repmat("missing_psych_folder", 1, 3));
+verifyFalse(testCase, isfolder(fullfile(d.output, d.subject)));
+end
+
+
 function testSameSelectionCanBeCopiedAgain(testCase)
 d = testCase.TestData;
 first = extract_psychopy_csv(d.raw, d.output);

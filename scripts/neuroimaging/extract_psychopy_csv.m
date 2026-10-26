@@ -36,7 +36,18 @@ for index = 1:numel(sublist)
     assert(~isempty(regexpi(subject, subjectPattern, 'once')), ...
         'Unexpected subject folder name: %s', subject);
     psychDir = fullfile(rawFolder, subject, 'PSYCH');
-    assert(isfolder(psychDir), 'Missing PSYCH folder: %s', psychDir);
+    if ~isfolder(psychDir)
+        warning('PSYCHOPY:MissingPsychFolder', ...
+            '%s skipped because it has no PSYCH folder: %s', subject, psychDir);
+        for task = tasks
+            entry = record;
+            entry.subject = subject;
+            entry.task = char(task);
+            entry.status = 'missing_psych_folder';
+            selection(end + 1, 1) = entry; %#ok<AGROW>
+        end
+        continue;
+    end
     csvFiles = dir(fullfile(psychDir, '*.csv'));
     fileTasks = strings(size(csvFiles));
     for fileIndex = 1:numel(csvFiles)
@@ -76,7 +87,6 @@ for index = 1:numel(sublist)
 end
 
 selected = strcmp({selection.status}, 'selected');
-assert(any(selected), 'No supported task CSV files selected.');
 if ~isfolder(outputFolder)
     mkdir(outputFolder);
 end

@@ -285,8 +285,10 @@ Timestamp comparison retains the current implementation's second-level
 precision; filenames with milliseconds are accepted, but files differing only
 in milliseconds remain tied.
 
-All selections are resolved before copying. Ambiguous ties and missing PSYCH
-folders stop extraction; missing task CSVs generate warnings and log entries.
+All selections are resolved before copying. Ambiguous ties stop extraction.
+Subjects without a PSYCH folder are skipped with a warning and log entries;
+missing task CSVs also generate warnings and log entries. If no CSV is selected,
+the selection log is still written and zero files are copied.
 Existing selected filenames can be copied again, but unexpected CSV filenames in
 a destination subject's PSYCH folder cause an error before copying; use a new
 destination in that case. Other subjects and non-CSV files are untouched.
