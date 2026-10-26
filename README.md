@@ -254,3 +254,43 @@ event files in the cluster dataset. When merging the replacement into the
 cluster dataset, transfer the `sub-*` directories with overwrite enabled; do
 not replace the cluster dataset's root `dataset_description.json` with the
 minimal validation metadata from this replacement package.
+
+## Extract selected original PsychoPy CSV files
+
+`scripts/neuroimaging/run_extract_psychopy_csv.m` copies selected original CSV
+files without converting events or imaging. Its source root follows
+`run_dicom2bids_checked.m` (`D:\Raw_trans`) and its destination is
+`Z:\xuhaoshu\PSYCH_tlr`. Edit those two paths for the current environment, then
+run the script in MATLAB. It scans direct THU subject folders by default:
+
+```matlab
+addpath('D:\projects\efny-pipeline\scripts\neuroimaging');
+extract_psychopy_csv('D:\Raw_trans', 'Z:\xuhaoshu\PSYCH_tlr');
+```
+
+To limit extraction to the same subject list as the DICOM conversion:
+
+```matlab
+extract_psychopy_csv('D:\Raw_trans', 'Z:\xuhaoshu\PSYCH_tlr', ...
+    'D:\BIDS_transfer\raw\sublist.txt');
+```
+
+The output layout is `<destination>/<source subject folder>/PSYCH/<original
+filename>.csv`, with at most one file each for SST, n-back, and switch. Filename
+recognition, raw `readtable` row-count priority, and timestamp tie-breaking match
+the current BIDS converters. No rows are removed and filenames and CSV contents
+are preserved. This extraction uses available behavioral tasks independently of
+BOLD retention, as does the PsychoPy-only converter.
+Timestamp comparison retains the current implementation's second-level
+precision; filenames with milliseconds are accepted, but files differing only
+in milliseconds remain tied.
+
+All selections are resolved before copying. Ambiguous ties and missing PSYCH
+folders stop extraction; missing task CSVs generate warnings and log entries.
+Existing selected filenames can be copied again, but unexpected CSV filenames in
+a destination subject's PSYCH folder cause an error before copying; use a new
+destination in that case. Other subjects and non-CSV files are untouched.
+`selection_log.json` records candidate paths, row counts for multiple candidates,
+selected destinations, missing tasks, and MATLAB version. See the
+[Chinese extraction guide](docs/psychopy_csv_extraction.md) for boundaries and
+validation instructions.
