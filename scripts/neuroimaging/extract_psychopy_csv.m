@@ -1,7 +1,7 @@
 function selection = extract_psychopy_csv(rawFolder, outputFolder, sublistPath)
 %EXTRACT_PSYCHOPY_CSV Copy one original CSV per subject and supported task.
-% rawFolder contains subject/PSYCH folders. Copies in outputFolder retain
-% subject folders and original filenames. Optional sublistPath
+% rawFolder contains subject/PSYCH folders. Copies use BIDS subject labels
+% without name initials and retain original CSV filenames. Optional sublistPath
 % lists source subject folders; otherwise all THU subject folders are used.
 % Selection matches the BIDS converters: most readtable rows, then latest
 % filename timestamp. This does not match behavior to a particular BOLD run.
@@ -25,7 +25,7 @@ assert(numel(unique(sublist)) == numel(sublist), ...
     'Duplicate subject folders in the extraction list.');
 
 tasks = ["sst", "nback", "switch"];
-record = struct('subject', '', 'task', '', 'status', '', ...
+record = struct('subject', '', 'output_subject', '', 'task', '', 'status', '', ...
     'candidates', {{}}, 'candidate_rows', [], 'selected_file', '', ...
     'destination', '');
 selection = repmat(record, 0, 1);
@@ -33,8 +33,11 @@ selection = repmat(record, 0, 1);
 % Resolve the whole selection before copying, so ambiguity leaves no output.
 for index = 1:numel(sublist)
     subject = char(sublist(index));
-    assert(~isempty(regexpi(subject, subjectPattern, 'once')), ...
+    subjectParts = regexpi(subject, subjectPattern, 'tokens', 'once');
+    assert(~isempty(subjectParts), ...
         'Unexpected subject folder name: %s', subject);
+    outputSubject = sprintf('sub-THU%s%04d', ...
+        subjectParts{1}, str2double(subjectParts{2}));
     psychDir = fullfile(rawFolder, subject, 'PSYCH');
     if ~isfolder(psychDir)
         warning('PSYCHOPY:MissingPsychFolder', ...
@@ -42,6 +45,7 @@ for index = 1:numel(sublist)
         for task = tasks
             entry = record;
             entry.subject = subject;
+            entry.output_subject = outputSubject;
             entry.task = char(task);
             entry.status = 'missing_psych_folder';
             selection(end + 1, 1) = entry; %#ok<AGROW>
@@ -57,6 +61,7 @@ for index = 1:numel(sublist)
     for task = tasks
         entry = record;
         entry.subject = subject;
+        entry.output_subject = outputSubject;
         entry.task = char(task);
         candidates = csvFiles(fileTasks == task);
         entry.candidates = arrayfun(@(file) fullfile(file.folder, file.name), ...
@@ -70,16 +75,20 @@ for index = 1:numel(sublist)
             entry.status = 'selected';
             entry.candidate_rows = rowCounts;
             entry.selected_file = fullfile(chosen.folder, chosen.name);
-            entry.destination = fullfile(outputFolder, subject, 'PSYCH', chosen.name);
+            entry.destination = fullfile(outputFolder, outputSubject, 'PSYCH', chosen.name);
         end
         selection(end + 1, 1) = entry; %#ok<AGROW>
     end
 
+    subjectEntries = selection(strcmp({selection.subject}, subject));
+    if ~any(strcmp({subjectEntries.status}, 'selected'))
+        continue;
+    end
+
     % Old filenames could otherwise masquerade as additional selected runs.
-    existing = dir(fullfile(outputFolder, subject, 'PSYCH', '*.csv'));
+    existing = dir(fullfile(outputFolder, outputSubject, 'PSYCH', '*.csv'));
     existingPaths = string(arrayfun(@(file) fullfile(file.folder, file.name), ...
         existing, 'UniformOutput', false));
-    subjectEntries = selection(strcmp({selection.subject}, subject));
     assert(all(ismember(existingPaths, string({subjectEntries.destination}))), ...
         'PSYCHOPY:StaleDestinationCsv', ...
         ['Destination PSYCH contains CSV files outside the current selection ', ...
@@ -87,6 +96,10 @@ for index = 1:numel(sublist)
 end
 
 selected = strcmp({selection.status}, 'selected');
+assert(numel(unique(string({selection(selected).subject}))) == ...
+    numel(unique(string({selection(selected).output_subject}))), ...
+    'PSYCHOPY:DuplicateOutputSubject', ...
+    'Different source folders with selected CSV files map to the same BIDS subject label.');
 if ~isfolder(outputFolder)
     mkdir(outputFolder);
 end
