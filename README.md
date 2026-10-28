@@ -40,9 +40,11 @@ no-STC 已运行和已完成的数据、缓存均保留。
 任务态支持不带 `run-*` 的单 run 命名，缺少 STC 元数据时直接报错。
 完整命令、路径及范围说明见[任务态 STC 预处理](docs/task_fmri_preprocessing.md)。
 
-THU task 的 36P＋任务效应回归及 background FC 扩展目前处于规划阶段，
-见 [PLAN.md](PLAN.md) 与[任务态 background FC 修改方案](docs/task_background_fc_plan.md)。
-实施前需完成协变量覆盖及 STC 采样时间核对；拟议下游路径显式使用 `task_background`。
+THU task 已新增 36P＋任务效应联合回归及逐 run background FC 入口，
+使用 `--scope task --task <sst|nback|switch>`，下游路径显式使用 `task_background/<task>`。
+输入准备、提交和完成审计见[任务态 background FC](docs/task_background_fc.md)，
+原始修改方案见 [PLAN.md](PLAN.md)。2026-10-28 核查有 1,507/1,522 个 run 匹配协变量，
+但全部匹配项声明的 0 秒采样偏移仍与 STC BOLD 不同；代码将拦截提交，尚未运行正式 XCP-D。
 
 静息态入口仅支持 `sub-*/func/*_task-rest_run-*_bold.nii[.gz]`，不支持 `ses-*` 或多回波输入。
 默认使用 fMRIPrep 25.2.5、XCP-D 26.0.2／36P／0.01–0.1 Hz 带通且不做逐帧 censoring。

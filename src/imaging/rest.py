@@ -77,6 +77,8 @@ def compute_motion(config: dict, scans: list[dict], subject: str) -> None:
         frames = len(records) - dummy
         assert frames >= 2 and len(fd_values) + missing_first == frames
         row = dict(scan)
+        if config.get("scope") == "task":
+            row = {key: scan[key] for key in ("dataset", "subject", "task", "run", "scan_id")}
         row.update(
             frames=frames,
             fd_valid_frames=len(fd_values),
@@ -85,8 +87,9 @@ def compute_motion(config: dict, scans: list[dict], subject: str) -> None:
             high_motion_ratio=sum(fd > threshold for fd in fd_values) / frames,
             fd_threshold_mm=threshold,
             dummy_scans=dummy,
-            confounds=str(confounds),
         )
+        if config.get("scope") != "task":
+            row["confounds"] = str(confounds)
         rows.append(row)
     assert rows, f"No rest scans for {subject}"
     write_csv(module_path(config, "head_motion", "tables") / "subjects" / f"{subject}.csv", rows)

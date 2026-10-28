@@ -1,4 +1,4 @@
-"""Explicit THU/XY fMRIPrep and resting-state downstream submission and audits."""
+"""Explicit preprocessing, rest FC and task background FC submission and audits."""
 
 import argparse
 import csv
@@ -12,14 +12,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from imaging.config import load_config, module_path, shell_config
+from imaging.background import (
+    compute_background_fc, prepare_background, regression_config,
+    validate_background_inputs, validate_background_fc, validate_joint_design,
+)
 from imaging.rest import (
     compute_fc, compute_motion, derivative_path, load_ptseries, read_csv, summarize_qc,
     write_csv, write_motion_qc_tables,
 )
 
 
-STAGES = ("fmriprep", "xcpd", "head_motion", "rest_fc")
-UPSTREAM = {"fmriprep": (), "xcpd": ("fmriprep",), "head_motion": ("xcpd",), "rest_fc": ("xcpd", "head_motion")}
+STAGES = ("fmriprep", "xcpd", "head_motion", "rest_fc", "background_fc")
+UPSTREAM = {"fmriprep": (), "xcpd": ("fmriprep",), "head_motion": ("xcpd",),
+            "rest_fc": ("xcpd", "head_motion"), "background_fc": ("xcpd",)}
 
 
 def discover_scans(config: dict, subjects_file: Path | None) -> list[dict]:
@@ -95,11 +100,22 @@ def input_scans(config: dict) -> list[dict]:
     return scans
 
 
+def background_scans(config: dict) -> list[dict]:
+    """Read the selected task inventory without replacing the full fMRIPrep inventory."""
+    scans = read_csv(module_path(config, "xcpd", "logs") / "input_scans.csv")
+    upstream = {s["scan_id"]: s for s in input_scans(config)}
+    assert scans and len({s["scan_id"] for s in scans}) == len(scans), "Empty or duplicate background scan identities"
+    assert all(s["task"] == config["task"] and s == upstream[s["scan_id"]] for s in scans), (
+        "Background inventory differs from selected task/fMRIPrep input; prepare again")
+    return scans
+
+
 def processing_settings(config: dict, stage: str) -> dict:
     """Describe scientific settings used to reject stale completion records."""
     keys = {
         "fmriprep": ("fmriprep",), "xcpd": ("xcpd", "atlases"),
         "head_motion": ("head_motion", "xcpd"), "rest_fc": ("head_motion", "xcpd", "atlases"),
+        "background_fc": ("xcpd", "atlases"),
     }[stage]
     settings = {key: config[key] for key in keys}
     if stage == "fmriprep" and not config["fmriprep"]["ignore"]:
@@ -107,6 +123,11 @@ def processing_settings(config: dict, stage: str) -> dict:
         settings["fmriprep"] = {key: value for key, value in config["fmriprep"].items() if key != "ignore"}
     if config.get("scope", "rest") == "task":
         settings["task_fmri"] = config["task_fmri"]
+        if stage != "fmriprep":
+            settings.update(task=config["task"], task_xcpd=config["task_xcpd"],
+                            background_regression=regression_config(config))
+            settings["custom_dataset"] = json.loads((Path(config["task_xcpd"]["confounds_dir"]) /
+                                                      "dataset_description.json").read_text(encoding="utf-8"))
     if stage in ("fmriprep", "xcpd"):
         settings["image"] = config["tools"][stage + "_image"]
     return settings
@@ -118,9 +139,15 @@ def record_path(config: dict, stage: str, subject: str) -> Path:
 
 def assert_completed(config: dict, stage: str, subject: str, scans: list[dict]) -> dict:
     """Reject outputs whose scientific settings, input identities or upstream run have changed."""
+    if config.get("scope") == "task" and stage == "fmriprep":
+        # Existing preprocessing markers contain ALL tasks for this subject.
+        scans = input_scans(config)
     record = json.loads(record_path(config, stage, subject).read_text(encoding="utf-8"))
     assert record["processing"] == processing_settings(config, stage), f"Stale {stage} settings: {subject}"
     assert record["scans"] == [scan for scan in scans if scan["subject"] == subject], f"Stale {stage} inputs: {subject}"
+    if config.get("scope") == "task" and stage == "xcpd":
+        current = validate_background_inputs(config, [s for s in scans if s["subject"] == subject])
+        assert record["task_confounds"] == current, f"Task confounds changed since XCP-D: {subject}"
     for previous in UPSTREAM[stage]:
         upstream = assert_completed(config, previous, subject, scans)
         assert record["upstream_completed_at"][previous] == upstream["completed_at_utc"], (
@@ -153,6 +180,8 @@ def save_record(config: dict, stage: str, subject: str, scans: list[dict], comma
         upstream_completed_at={previous: assert_completed(config, previous, subject, scans)["completed_at_utc"]
                                for previous in UPSTREAM[stage]},
     )
+    if config.get("scope") == "task" and stage == "xcpd":
+        record["task_confounds"] = validate_background_inputs(config, [s for s in scans if s["subject"] == subject])
     path = record_path(config, stage, subject)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
@@ -160,6 +189,11 @@ def save_record(config: dict, stage: str, subject: str, scans: list[dict], comma
 
 def required_products(config: dict, stage: str, scans: list[dict]) -> list[Path]:
     """List the products required for this exact source inventory, not old log messages."""
+    if stage == "background_fc":
+        return [module_path(config, stage, "processed") / s["subject"] / s["scan_id"] / atlas / kind /
+                f"{s['scan_id']}_atlas-{atlas}_{suffix}.csv"
+                for s in scans for atlas in config["atlases"]
+                for kind, suffix in (("raw", "fc"), ("fisher_z", "fc_fisher_z"))]
     paths = [module_path(config, stage, "interim") / "dataset_description.json"]
     paths.extend(module_path(config, stage, "interim") / f"{subject}.html" for subject in sorted({scan["subject"] for scan in scans}))
     for scan in scans:
@@ -174,6 +208,8 @@ def required_products(config: dict, stage: str, scans: list[dict]) -> list[Path]
             paths.append(derivative_path(config, scan, stage, "space-fsLR_den-91k_desc-denoised_bold.dtseries.nii"))
             for atlas in config["atlases"]:
                 paths.append(derivative_path(config, scan, stage, f"space-fsLR_atlas-{atlas}_den-91k_stat-mean_timeseries.ptseries.nii"))
+            if config.get("scope") == "task":
+                paths.append(derivative_path(config, scan, stage, "design.tsv"))
     return paths
 
 
@@ -218,14 +254,23 @@ def check(config: dict, stage: str, scans: list[dict]) -> None:
             record = json.loads(marker.read_text(encoding="utf-8"))
             if record["processing"] != processing_settings(config, stage) or record["scans"] != subset:
                 reason.append("processing settings or input run identities changed")
-            if stage == "xcpd":
-                previous = assert_completed(config, "fmriprep", subject, scans)
-                if record["upstream_completed_at"]["fmriprep"] != previous["completed_at_utc"]:
-                    reason.append("fmriprep was rerun after this xcpd execution")
+            for stage_before in UPSTREAM[stage]:
+                previous = assert_completed(config, stage_before, subject, scans)
+                if record["upstream_completed_at"][stage_before] != previous["completed_at_utc"]:
+                    reason.append(f"{stage_before} was rerun after this {stage} execution")
+            if stage == "xcpd" and config.get("scope") == "task":
+                current = validate_background_inputs(config, subset)
+                if record["task_confounds"] != current:
+                    reason.append("task confounds changed after this xcpd execution")
         if missing:
             reason.append("missing products: " + ";".join(missing))
         if not reason:
-            validate_time_axes(config, stage, subset)
+            if stage == "background_fc":
+                validate_background_fc(config, subset)
+            else:
+                validate_time_axes(config, stage, subset)
+                if config.get("scope") == "task" and stage == "xcpd":
+                    validate_joint_design(config, subset)
         rows.append(dict(dataset=config["dataset"], subject=subject, complete=str(not reason).lower(), reason=";".join(reason)))
     root = module_path(config, stage, "logs")
     write_csv(root / "completion_audit.csv", rows)
@@ -242,6 +287,19 @@ def start_container(config: dict, stage: str, subject: str, scans: list[dict]) -
     for previous in UPSTREAM[stage]:
         assert_completed(config, previous, subject, scans)
     record_path(config, stage, subject).unlink(missing_ok=True)
+    if config.get("scope") == "task" and stage == "xcpd":
+        subset = [s for s in scans if s["subject"] == subject]
+        current = validate_background_inputs(config, subset)
+        # Verify the filter that the actual container will consume, not only a dry-run string.
+        query_path = module_path(config, "xcpd", "logs") / "filters" / f"{subject}.json"
+        query = json.loads(query_path.read_text(encoding="utf-8"))
+        expected_runs = [int(s["run"]) for s in subset if s["run"]]
+        assert query == {"bold": {"task": config["task"], "run": expected_runs or None}}, "Stale task BIDS filter"
+        path = module_path(config, "xcpd", "logs") / "started" / f"{subject}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot = dict(task_confounds=current, processing=processing_settings(config, stage), scans=subset,
+                        upstream_completed_at=assert_completed(config, "fmriprep", subject, scans)["completed_at_utc"])
+        path.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
 
 
 def finish_container(config: dict, stage: str, subject: str, scans: list[dict], command: list[str], version: str) -> None:
@@ -249,8 +307,16 @@ def finish_container(config: dict, stage: str, subject: str, scans: list[dict], 
     subset = [scan for scan in scans if scan["subject"] == subject]
     assert subset, f"Unknown subject: {subject}"
     missing = [path for path in required_products(config, stage, subset) if not path.is_file()]
-    assert not missing, f"Container exited but expected rest derivatives are missing: {missing}"
+    assert not missing, f"Container exited but expected derivatives are missing: {missing}"
     validate_time_axes(config, stage, subset)
+    if config.get("scope") == "task" and stage == "xcpd":
+        current = validate_background_inputs(config, subset)
+        path = module_path(config, "xcpd", "logs") / "started" / f"{subject}.json"
+        started = json.loads(path.read_text(encoding="utf-8"))
+        assert started == dict(task_confounds=current, processing=processing_settings(config, stage), scans=subset,
+                               upstream_completed_at=assert_completed(config, "fmriprep", subject, scans)["completed_at_utc"]), (
+            "Task design, settings or upstream changed during XCP-D; completion was not recorded")
+        validate_joint_design(config, subset)
     save_record(config, stage, subject, scans, command, version)
 
 
@@ -259,10 +325,14 @@ def run_stage(config: dict, stage: str, subject: str, scans: list[dict], dry_run
     """Run scientific shell scripts for preprocessing, or Python calculations for head motion and FC."""
     assert any(scan["subject"] == subject for scan in scans), f"Unknown subject: {subject}"
     if stage in ("fmriprep", "xcpd"):
-        script_name = "run_fmriprep_task.sbatch" if config.get("scope", "rest") == "task" else f"run_{stage}.sbatch"
+        script_name = f"run_{stage}.sbatch"
+        if config.get("scope") == "task":
+            script_name = "run_fmriprep_task.sbatch" if stage == "fmriprep" else "run_xcpd_task_background.sbatch"
         script = Path(config["project_root"]) / "scripts/neuroimaging" / script_name
         command = ["bash", str(script), config["dataset"], subject,
                    str(config_path.resolve()), config["project_root"]]
+        if config.get("scope") == "task" and stage == "xcpd":
+            command.append(config["task"])
         if dry_run:
             command.append("--dry-run")
         subprocess.run(command, check=True)
@@ -284,6 +354,9 @@ def run_stage(config: dict, stage: str, subject: str, scans: list[dict], dry_run
         import numpy
         if stage == "head_motion":
             compute_motion(config, scans, subject)
+        elif stage == "background_fc":
+            validate_time_axes(config, "xcpd", [s for s in scans if s["subject"] == subject])
+            compute_background_fc(config, scans, subject)
         else:
             compute_fc(config, scans, subject)
         version = f"numpy={numpy.__version__}, nibabel={nibabel.__version__}"
@@ -298,7 +371,7 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
         assert_qc_current(config, scans)
     if subjects_file:
         subjects = [line.strip() for line in subjects_file.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
-    elif stage == "fmriprep":
+    elif stage == "fmriprep" or config.get("scope") == "task":
         subjects = sorted({scan["subject"] for scan in scans})
     elif stage in ("xcpd", "head_motion"):
         previous = "fmriprep" if stage == "xcpd" else "xcpd"
@@ -307,10 +380,12 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
         subjects = [row["subject"] for row in read_csv(module_path(config, "head_motion", "tables") / "subject_qc.csv") if row["subject_valid"] == "true"]
     assert subjects and len(subjects) == len(set(subjects)), "No eligible subjects or duplicate subjects"
     assert set(subjects) <= {row["subject"] for row in scans}, "Submission subject missing from input inventory"
-    if stage in ("xcpd", "head_motion", "rest_fc"):
+    if stage in ("xcpd", "head_motion", "rest_fc", "background_fc"):
         for subject in subjects:
             for previous in UPSTREAM[stage]:
                 assert_completed(config, previous, subject, scans)
+            if config.get("scope") == "task" and stage == "xcpd":
+                validate_background_inputs(config, [s for s in scans if s["subject"] == subject])
     root = Path(config["project_root"])
     logs = module_path(config, stage, "logs")
     if not dry_run:
@@ -318,8 +393,9 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
     submitted = []
     script = root / "scripts/neuroimaging" / f"run_{stage}.sbatch"
     if config.get("scope", "rest") == "task":
-        assert stage == "fmriprep", "Task scope currently supports fMRIPrep only"
-        script = root / "scripts/neuroimaging/run_fmriprep_task.sbatch"
+        names = {"fmriprep": "run_fmriprep_task.sbatch", "xcpd": "run_xcpd_task_background.sbatch",
+                 "head_motion": "run_head_motion_task_background.sbatch", "background_fc": "run_background_fc.sbatch"}
+        script = root / "scripts/neuroimaging" / names[stage]
     if stage == "fmriprep":
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')
         subjects_path = logs / f"array_subjects_{stamp}.txt"
@@ -351,6 +427,8 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
             "--output", str(logs / f"{subject}_%j.out"), "--error", str(logs / f"{subject}_%j.err"),
             str(script), config["dataset"], subject, str(config_path.resolve()),
         ]
+        if config.get("scope") == "task":
+            command.extend([str(root), config["task"]])
         if dry_run:
             print(shlex.join(command))
         else:
@@ -361,10 +439,11 @@ def submit(config: dict, stage: str, config_path: Path, scans: list[dict], subje
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="EFNY fMRIPrep and resting-state downstream pipeline.")
+    parser = argparse.ArgumentParser(description="EFNY fMRIPrep, rest FC and task background FC pipeline.")
     parser.add_argument("command", choices=["prepare", "submit", "run", "check", "qc", "export-motion-qc", "show-config", "shell-config", "start-container", "finish-container"])
     parser.add_argument("--config", type=Path, default=Path("configs/neuroimaging_stc.json"))
     parser.add_argument("--scope", choices=["rest", "task"], default="rest")
+    parser.add_argument("--task", choices=["sst", "nback", "switch"], help="One task for the task-background branch.")
     parser.add_argument("--dataset", choices=["THU", "XY"], default="THU")
     parser.add_argument("--project-root", type=Path)
     parser.add_argument("--stage", choices=STAGES)
@@ -374,11 +453,19 @@ def main() -> None:
     parser.add_argument("--tool-version")
     parser.add_argument("--container-command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    config = load_config(args.config, args.dataset, args.project_root, args.scope)
+    config = load_config(args.config, args.dataset, args.project_root, args.scope, args.task)
     if args.scope == "task":
         assert not config["fmriprep"]["ignore"], "Task primary analysis requires STC with an empty ignore list"
-        assert args.stage in (None, "fmriprep"), "Task scope currently supports fMRIPrep only"
+        assert args.stage != "rest_fc", "Use background_fc for task data"
         assert args.command not in ("qc", "export-motion-qc"), "Motion QC/FC rules are rest-only"
+        if args.stage in ("xcpd", "head_motion", "background_fc"):
+            assert args.dataset == "THU" and args.task, "Task background processing requires THU and --task"
+            assert config["xcpd"]["dummy_scans"] == 0, "Task background analysis retains all acquired volumes"
+            assert config["xcpd"]["nuisance_regressors"] == "36P", "Task background analysis extends 36P"
+        else:
+            assert args.task is None, "Task fMRIPrep continues to use the full configured task list"
+    else:
+        assert args.stage != "background_fc", "background_fc requires --scope task"
     assert isinstance(config["xcpd"]["dummy_scans"], int) and config["xcpd"]["dummy_scans"] >= 0
     if args.command == "show-config":
         print(json.dumps(config, indent=2))
@@ -386,9 +473,13 @@ def main() -> None:
         assert args.stage in ("fmriprep", "xcpd") and args.subject
         shell_config(config, args.stage, args.subject)
     elif args.command == "prepare":
-        prepare(config, args.subjects)
+        if args.scope == "task" and args.stage == "xcpd":
+            prepare_background(config, input_scans(config), args.subjects)
+        else:
+            assert args.stage in (None, "fmriprep"), "Prepare the task background branch with --stage xcpd"
+            prepare(config, args.subjects)
     else:
-        scans = input_scans(config)
+        scans = (background_scans(config) if args.scope == "task" and args.stage != "fmriprep" else input_scans(config))
         if args.command == "export-motion-qc":
             rows = read_csv(module_path(config, "head_motion", "tables") / "run_qc.csv")
             expected = {(scan["subject"], scan["scan_id"]) for scan in scans}
@@ -408,7 +499,7 @@ def main() -> None:
             assert args.stage, "submit requires --stage"
             submit(config, args.stage, args.config, scans, args.subjects, args.dry_run)
         elif args.command == "check":
-            assert args.stage in ("fmriprep", "xcpd"), "check supports container stages"
+            assert args.stage in ("fmriprep", "xcpd", "background_fc"), "check supports container stages and background_fc"
             if args.subject:
                 scans = [scan for scan in scans if scan["subject"] == args.subject]
                 assert scans, "Unknown subject"

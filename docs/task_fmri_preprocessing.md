@@ -24,7 +24,8 @@ fMRIPrep 根据 `SliceTiming` 元数据启用 STC，定义见
 支持 `sub-*/func/*_task-<task>[_run-*]_bold.nii[.gz]`，允许任务态单 run 省略 run 实体。
 同一任务与 run 身份不得重复；继续不支持 session 和多回波。
 静息态原有的正整数 run 编号约定不变。
-当前任务态只支持 fMRIPrep，不自动运行静息态 XCP-D、头动筛选或 FC。
+该预处理入口仅运行 fMRIPrep。2026-10-28 新增独立的[任务态 background FC 分支](task_background_fc.md)，
+通过 `--stage xcpd --task <task>` 联合回归 36P 与任务效应，不自动套用静息态头动筛选或 FC 拼接。
 
 本次只读核对显示：原 731 人中 563 人有任务影像，共 1514 个 run
 （sst 561、nback 520、switch 433）；对应 JSON 均有 `SliceTiming`。

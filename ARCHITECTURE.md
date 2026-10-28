@@ -12,7 +12,8 @@ efny-pipeline/                  # 项目根目录
 ├── ARCHITECTURE.md             # 结构说明（本文）
 ├── configs/                    # 项目配置文件
 │   ├── neuroimaging_stc.json    # STC 主分析：THU/XY 输入、工具与分析参数
-│   └── neuroimaging.json        # 历史 no-STC 配置，供未结束作业继续读取
+│   ├── neuroimaging.json        # 历史 no-STC 配置，供未结束作业继续读取
+│   └── xcpd_36p_task_background.yml # 36P 与任务效应联合回归配置
 │
 ├── docs/                       # 方法、流程与决策记录
 │   ├── data_dictionary.md      # 数据字典（数据说明）
@@ -27,7 +28,8 @@ efny-pipeline/                  # 项目根目录
 │   ├── imaging/                # 影像预处理与影像指标提取
 │   │   ├── config.py           # 统一配置与模块输出路径
 │   │   ├── pipeline.py         # 输入清单、Slurm 提交与结果完成审计入口
-│   │   └── rest.py             # 头动 QC 与被试级 CIFTI 功能连接
+│   │   ├── rest.py             # 头动 QC 与被试级 CIFTI 功能连接
+│   │   └── background.py       # 任务协变量审计与逐 run background FC
 │   ├── behavior/               # 行为任务与人口学预处理
 │   └── inventory/              # 问卷与量表处理（预留）
 │
@@ -95,7 +97,7 @@ fMRIPrep／XCP-D 的分析参数选择和完整容器命令直接保存在对应
 上表是 STC 静息态主分析路径。2026-10-21 起，默认配置为
 `configs/neuroimaging_stc.json`，`fmriprep.ignore=[]`，静息态和任务态均启用 STC。
 任务态使用 `--scope task` 和 `scripts/neuroimaging/run_fmriprep_task.sbatch`，
-当前仅支持 fMRIPrep，不套用静息态头动／FC 规则。
+下游通过 `--stage xcpd --task <task>` 进入独立 background 分支，不套用静息态头动／FC 规则。
 
 | 任务态用途 | 路径（相对项目根目录） |
 | --- | --- |
@@ -107,6 +109,30 @@ fMRIPrep／XCP-D 的分析参数选择和完整容器命令直接保存在对应
 
 任务态不写入静息态衍生结果或静息态工作缓存。共享 FreeSurfer 是同被试的解剖重建，
 与是否 STC 无关；本轮任务态准备不重新启动静息态任务。
+
+## 任务态 background FC 生产模块
+
+THU 任务态下游使用 `--scope task --task sst|nback|switch`，读取上表 task fMRIPrep。
+`configs/neuroimaging_stc.json` 的独立 `task_xcpd` 设置保存只读协变量目录与回归 YAML 路径。
+36P 与已有 HRF 任务效应在 XCP-D 内联合回归，完整命令位于
+`scripts/neuroimaging/run_xcpd_task_background.sbatch`；三个任务分别提交，互不合并。
+
+| 生产模块／用途 | 路径（相对项目根目录） |
+| --- | --- |
+| xcpd derivatives、残差 ptseries、逐 run 相关及报告 | `data/interim/neuroimaging/xcpd/THU/task_background/<task>/` |
+| xcpd 专用缓存 | `data/interim/neuroimaging/xcpd/THU/work_task_background/<task>/<subject>/` |
+| xcpd 清单、过滤文件、协变量／设计审计、锁与完成记录 | `outputs/logs/neuroimaging/xcpd/THU/task_background/<task>/` |
+| xcpd 输入就绪汇总 | `outputs/tables/neuroimaging/xcpd/THU/task_background/<task>/input_readiness.csv` |
+| xcpd 容器临时目录 | `temp/neuroimaging/xcpd/THU/task_background/<task>/<subject>/<job_id>/` |
+| head_motion 逐 run 描述表 | `outputs/tables/neuroimaging/head_motion/THU/task_background/<task>/subjects/<subject>.csv` |
+| background_fc 逐 run r／z 矩阵 | `data/processed/neuroimaging/background_fc/THU/task_background/<task>/<subject>/<scan_id>/<atlas>/{raw,fisher_z}/` |
+| background_fc 逐 run 汇总表，图谱并列为列 | `outputs/tables/neuroimaging/background_fc/THU/task_background/<task>/subjects/<subject>.csv` |
+| head_motion／background_fc 日志、来源及完成记录 | `outputs/logs/neuroimaging/<module>/THU/task_background/<task>/` |
+
+`background_fc` 为独立生产模块。输入准备另存 task 子集，不改写原 fMRIPrep 完整清单；
+上游完成记录仍按完整被试输入验证。协变量采样偏移必须匹配 STC BOLD 的 `StartTime`，
+不自动修正外部协变量，不静默排除缺失 run。使用说明与当前输入限制见
+[任务态 background FC](docs/task_background_fc.md)。
 
 2026-10-20 的历史配置 `configs/neuroimaging.json` 仍保留 `fmriprep.ignore=["slicetiming"]`。
 统一路径函数在所有影像模块的 `<dataset>/` 后插入 `no_slicetiming/`，

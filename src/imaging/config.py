@@ -6,11 +6,15 @@ import shlex
 from pathlib import Path
 
 
-def load_config(path: Path, dataset: str, project_root: Path | None = None, scope: str = "rest") -> dict:
+def load_config(path: Path, dataset: str, project_root: Path | None = None, scope: str = "rest",
+                task: str | None = None) -> dict:
     """Resolve THU/XY inputs without substituting another dataset's BIDS root."""
     config = json.loads(path.read_text(encoding="utf-8"))
     config["dataset"] = dataset
     config["scope"] = scope
+    if task is not None:
+        assert scope == "task" and task in config["task_fmri"]["tasks"], f"Invalid task: {task}"
+        config["task"] = task
     config["project_root"] = str(project_root or config["project_root"])
     bids_dir = config["datasets"][dataset]["bids_dir"]
     if bids_dir is None:
@@ -31,6 +35,8 @@ def module_path(config: dict, module: str, kind: str) -> Path:
     root = Path(config["project_root"]) / roots[kind] / module / config["dataset"]
     if "slicetiming" in config["fmriprep"]["ignore"]:
         root = root / "no_slicetiming"
+    if config.get("scope") == "task" and module in ("xcpd", "background_fc", "head_motion"):
+        return root / "task_background" / config["task"]
     return root / config.get("scope", "rest")
 
 
@@ -54,6 +60,15 @@ def shell_config(config: dict, stage: str, subject: str) -> None:
         BIDS_FILTER=(module_path(config, "fmriprep", "logs") / "bids_filter.json").as_posix(),
     )
     values.update({f"{stage}_{key}".upper(): value for key, value in config[stage].items()})
+    if config.get("scope") == "task" and stage == "xcpd":
+        task = config["task"]
+        values.update(
+            TASK=task,
+            WORK_DIR=(output.parents[1] / "work_task_background" / task / subject).as_posix(),
+            CUSTOM_CONFOUNDS_DIR=Path(config["task_xcpd"]["confounds_dir"]).as_posix(),
+            CONFOUNDS_CONFIG=(Path(config["project_root"]) / config["task_xcpd"]["confounds_config"]).as_posix(),
+            BIDS_FILTER=(module_path(config, "xcpd", "logs") / "filters" / f"{subject}.json").as_posix(),
+        )
     for name, value in values.items():
         if isinstance(value, list):
             print(f"{name}=({' '.join(shlex.quote(str(item)) for item in value)})")

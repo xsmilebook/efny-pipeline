@@ -25,7 +25,8 @@
     "fmriprep_max_concurrent": 72,
     "xcpd_cpus": 1,
     "head_motion_cpus": 1,
-    "rest_fc_cpus": 1
+    "rest_fc_cpus": 1,
+    "background_fc_cpus": 1
   },
   "fmriprep": {
     "ignore": [],
@@ -59,6 +60,10 @@
     "4S156Parcels": 156,
     "4S256Parcels": 256,
     "4S456Parcels": 456
+  },
+  "task_xcpd": {
+    "confounds_dir": "/ibmgpfs/cuizaixu_lab/xuxiaoyu/BrainProject/THU/custom_confounds_TASK",
+    "confounds_config": "configs/xcpd_36p_task_background.yml"
   },
   "task_fmri": {
     "tasks": [
