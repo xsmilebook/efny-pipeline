@@ -79,6 +79,20 @@ uv run --offline --no-sync efny-imaging submit --stage fmriprep --dataset THU --
 uv run --offline --no-sync efny-imaging check --stage fmriprep --dataset THU --scope task
 ```
 
+## 任务态时间参考导出
+
+2026-10-28 按用户要求导出 THU 现有 task fMRIPrep 的
+`outputs/tables/neuroimaging/fmriprep/THU/task/thu_task_fmriprep_starttime_20261028.csv`。
+仅含 `subid`、`task`、`starttime` 三列，每个 run 一行；`subid` 保留完整 BIDS 标识，
+`starttime` 直接读取 MNI152NLin2009cAsym preprocessed BOLD JSON 的 `StartTime`，单位为秒，
+不统一取整或重新计算。当前 569 人／1,522 行，subject×task 唯一，nback 521、sst 567、switch 434。
+0.960 秒 282 行、0.959 秒 1,240 行；CSV 保留原数值，0.960 可序列化为等值的 0.96。
+
+来源、逐行 scan 身份及 JSON 路径另存
+`outputs/logs/neuroimaging/fmriprep/THU/task/thu_task_fmriprep_starttime_20261028_source.json`。
+本次仅向本地导出请求的元数据，不传输影像或修改上游结果；本地文件不作为 Git 跟踪数据。
+详细记录见[当日导出日志](sessions/2026-10-28_task_starttime_csv_export.md)。
+
 ## 保留历史作业
 
 `configs/neuroimaging.json` 保持原样，因为运行中的 no-STC 作业在结束时仍显式读取它。

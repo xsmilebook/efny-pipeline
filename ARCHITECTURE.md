@@ -104,6 +104,7 @@ fMRIPrep／XCP-D 的分析参数选择和完整容器命令直接保存在对应
 | fMRIPrep 衍生数据 | `data/interim/neuroimaging/fmriprep/<dataset>/task/` |
 | 任务态专用工作缓存 | `data/interim/neuroimaging/fmriprep/<dataset>/work_task/<subject>/` |
 | 输入清单、BIDS 过滤文件、作业日志与完成记录 | `outputs/logs/neuroimaging/fmriprep/<dataset>/task/` |
+| 任务态 StartTime 元数据导出表 | `outputs/tables/neuroimaging/fmriprep/<dataset>/task/` |
 | 容器临时目录 | `temp/neuroimaging/fmriprep/<dataset>/task/<subject>/<job_id>/` |
 | FreeSurfer | 沿用 STC 目录 `data/interim/neuroimaging/freesurfer/<dataset>/` |
 
