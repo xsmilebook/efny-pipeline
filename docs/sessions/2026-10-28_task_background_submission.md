@@ -34,3 +34,7 @@ sbatch --parsable --job-name=thu_task_background_prepare \
 控制入口第一版 `40f9ebc` 已推送并在集群干净工作区快进同步。依赖 prepare 的试跑控制作业为 `15459638`，registry 为 `outputs/logs/neuroimaging/xcpd/THU/task_background/run_20261028T1650.json`，初始化时记录实际运行代码 commit。完整提交参数为 `sbatch --parsable --dependency=afterok:15459635 --kill-on-invalid-dep=yes --job-name=thu_background_pilot --output=outputs/logs/neuroimaging/xcpd/THU/task_background/pilot_all_%j.out --error=outputs/logs/neuroimaging/xcpd/THU/task_background/pilot_all_%j.err scripts/neuroimaging/submit_task_background.sbatch pilot outputs/logs/neuroimaging/xcpd/THU/task_background/run_20261028T1650.json`。
 
 额外补充真实残差投影门槛：通过读取已配置 26.0.2 镜像内 `xcp_d/utils/utils.py` 核实 detrend→同带通→回归的实际顺序及 padding。批量控制阶段在同镜像中调用 `audit_task_pilot_residuals.py`，要求三套图谱残差与滤波后联合设计的最大归一化内积 <1e-5，记录滤波后设计秩。保留 task 信号的合成反例必须被拒绝；不改变正式回归参数，不向项目 uv 环境新增 Nilearn／SciPy。
+
+该检查的代码为 `81113d5`，已推送并同步。计算节点同镜像的两个合成检验在作业 `15459646` 中通过：去除信号的 float32 残差通过，特意保留 task 信号的反例被拒绝，测试运行 5.417 秒，Slurm COMPLETED、0:0、总耗时 10 秒。试跑控制依赖更新为 `afterok:15459635:15459646`，使用 `q_fat_c`、1 CPU；测试目录由 TemporaryDirectory 自动清理。容器内命令为 `python -m unittest discover -s tests -p test_task_pilot_residuals.py -q`，宿主 OMP／OpenBLAS／MKL／NumExpr 均限制 1 线程。
+
+完整准备的 SST 部分已通过：562/567 run 就绪，111 个偏移 0.96、451 个偏移 0.959；5 个阻塞项均缺少 TSV 和 JSON，没有时间错位或非有限设计。实际 SST 代表样本覆盖两种偏移 × 有／无 cue 四个组合，其余两个任务仍在同一准备作业顺序审计中。
