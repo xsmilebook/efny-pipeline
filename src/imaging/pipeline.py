@@ -234,6 +234,11 @@ def validate_time_axes(config: dict, stage: str, scans: list[dict]) -> None:
         expected = frames if stage == "fmriprep" else frames - config["xcpd"]["dummy_scans"]
         assert isinstance(axis, SeriesAxis) and axis.size == expected, f"CIFTI time axis mismatch: {scan['scan_id']}"
         if stage == "xcpd":
+            if config.get("scope") == "task":
+                source_json = Path(scan["source_bold"]).with_name(scan["scan_id"] + "_bold.json")
+                tr = json.loads(source_json.read_text(encoding="utf-8"))["RepetitionTime"]
+                assert axis.unit == "SECOND" and abs(axis.step - tr) < 1e-6, (
+                    f"Task residual TR differs from source BOLD: {scan['scan_id']}")
             for atlas, parcels in config["atlases"].items():
                 path = derivative_path(config, scan, stage, f"space-fsLR_atlas-{atlas}_den-91k_stat-mean_timeseries.ptseries.nii")
                 data, _, step = load_ptseries(path, parcels)

@@ -107,6 +107,8 @@ registry 保存代码 commit、干净工作区、路径、冻结范围、缺失 
 
 完成审计要求 denoised CIFTI、所有图谱 ptseries、报告、成功记录以及每个 run 的 `*_design.tsv`。设计须包括 24 个滤波后 motion 项、12 个组织／全局信号项及实际 task 列；任务列数值应与输入相同，记录联合设计秩和名义剩余自由度。该设计 TSV 是带通前的联合设计，名义自由度不代表带通和自相关后的有效自由度；不以原始未滤波任务列与残差的相关为零作为错误验收条件。
 
+task 残差的 CIFTI 时间单位须为秒、步长须直接匹配原始 BOLD 的 TR；再要求各图谱 ptseries 与其时间轴一致，避免输出之间同时带有同一个错误 TR 而误通过。
+
 ```bash
 uv run --offline --no-sync efny-imaging check --dataset THU --scope task --stage xcpd --task sst
 ```

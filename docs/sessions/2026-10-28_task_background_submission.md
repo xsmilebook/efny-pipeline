@@ -38,3 +38,5 @@ sbatch --parsable --job-name=thu_task_background_prepare \
 该检查的代码为 `81113d5`，已推送并同步。计算节点同镜像的两个合成检验在作业 `15459646` 中通过：去除信号的 float32 残差通过，特意保留 task 信号的反例被拒绝，测试运行 5.417 秒，Slurm COMPLETED、0:0、总耗时 10 秒。试跑控制依赖更新为 `afterok:15459635:15459646`，使用 `q_fat_c`、1 CPU；测试目录由 TemporaryDirectory 自动清理。容器内命令为 `python -m unittest discover -s tests -p test_task_pilot_residuals.py -q`，宿主 OMP／OpenBLAS／MKL／NumExpr 均限制 1 线程。
 
 完整准备的 SST 部分已通过：562/567 run 就绪，111 个偏移 0.96、451 个偏移 0.959；5 个阻塞项均缺少 TSV 和 JSON，没有时间错位或非有限设计。实际 SST 代表样本覆盖两种偏移 × 有／无 cue 四个组合，其余两个任务仍在同一准备作业顺序审计中。
+
+补充 task 残差 TR 与原始 BOLD 的直接对照，防止 denoised CIFTI 和三个 ptseries 彼此一致、却共同带有错误 TR 的静默问题；rest 规则不变。新增反例测试将残差与 ptseries 同时从 2 秒改为 3 秒，必须拒绝。集群 uv 环境实测 Python 3.11.15、NumPy 2.2.6、NiBabel 5.4.2；镜像实测 XCP-D 26.0.2、Python 3.12.12、Nilearn 0.12.1、NumPy 2.2.6、SciPy 1.15.2。

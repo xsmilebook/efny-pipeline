@@ -24,7 +24,7 @@ from imaging.background import (
 from imaging.config import load_config, module_path, shell_config
 from imaging.pipeline import (
     assert_completed, background_scans, check, finish_container, input_scans, prepare,
-    processing_settings, record_path, run_stage, start_container, submit,
+    processing_settings, record_path, run_stage, start_container, submit, validate_time_axes,
 )
 from imaging.rest import compute_motion, derivative_path, read_csv
 
@@ -268,6 +268,19 @@ class BackgroundTests(unittest.TestCase):
         design.write_text(design.read_text().replace("task_0back", "signal__task_0back"), encoding="utf-8")
         with self.assertRaisesRegex(AssertionError, "joint design"):
             validate_joint_design(self.config, self.scans)
+
+    def test_consistently_wrong_residual_tr_is_rejected(self):
+        self.write_outputs()
+        scan = self.scans[0]
+        for suffix in ("space-fsLR_den-91k_desc-denoised_bold.dtseries.nii",
+                       "space-fsLR_atlas-synthetic_den-91k_stat-mean_timeseries.ptseries.nii"):
+            path = derivative_path(self.config, scan, "xcpd", suffix)
+            image = nib.load(path)
+            wrong = nib.Cifti2Image(image.get_fdata(), header=nib.Cifti2Header.from_axes(
+                (SeriesAxis(0, 3, 100), image.header.get_axis(1))))
+            nib.save(wrong, path)
+        with self.assertRaisesRegex(AssertionError, "Task residual TR differs"):
+            validate_time_axes(self.config, "xcpd", [scan])
 
     def test_submission_routes_and_upstream_completion(self):
         with patch("imaging.pipeline.subprocess.check_output", return_value="12345\n") as sbatch:
