@@ -43,8 +43,10 @@ no-STC 已运行和已完成的数据、缓存均保留。
 THU task 已新增 36P＋任务效应联合回归及逐 run background FC 入口，
 使用 `--scope task --task <sst|nback|switch>`，下游路径显式使用 `task_background/<task>`。
 输入准备、提交和完成审计见[任务态 background FC](docs/task_background_fc.md)，
-原始修改方案见 [PLAN.md](PLAN.md)。2026-10-28 核查有 1,507/1,522 个 run 匹配协变量，
-但全部匹配项声明的 0 秒采样偏移仍与 STC BOLD 不同；代码将拦截提交，尚未运行正式 XCP-D。
+原始修改方案见 [PLAN.md](PLAN.md)。2026-10-28 协变量已更新至生成器 1.4.0，
+现有 1,507/1,522 个 run 的采样参考改为各自 fMRIPrep StartTime。
+使用 `submit_task_background.sbatch` 冻结就绪范围并先运行真实试跑；三个任务试跑均通过后，
+自动提交剩余被试并安排完成审计。缺失的 15 个 run 单独记录，不生成替代协变量。
 
 静息态入口仅支持 `sub-*/func/*_task-rest_run-*_bold.nii[.gz]`，不支持 `ses-*` 或多回波输入。
 默认使用 fMRIPrep 25.2.5、XCP-D 26.0.2／36P／0.01–0.1 Hz 带通且不做逐帧 censoring。

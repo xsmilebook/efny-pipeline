@@ -2,11 +2,11 @@
 
 ## 实现状态与输入限制
 
-2026-10-28 已实现 THU task XCP-D、协变量就绪审计、逐 run 头动描述、background FC 导出及完成审计。已做本地合成与模拟容器验证；尚未用真实数据运行 task XCP-D，没有正式 background FC 结果。
+2026-10-28 已实现 THU task XCP-D、协变量就绪审计、逐 run 头动描述、background FC 导出及完成审计。用户进一步授权对修正后的输入实际提交 XCP-D；运行状态和作业号见[提交记录](sessions/2026-10-28_task_background_submission.md)。提交不等于完成。
 
-外部输入为 `/ibmgpfs/cuizaixu_lab/xuxiaoyu/BrainProject/THU/custom_confounds_TASK`，生成器版本现为 `build_task_confounds.py` 1.3.1。只读取 `sub-*/func/*_desc-confounds_timeseries.tsv` 和 JSON，不将同目录 events TSV 混入回归。
+外部输入为 `/ibmgpfs/cuizaixu_lab/xuxiaoyu/BrainProject/THU/custom_confounds_TASK`，生成器版本现为 `build_task_confounds.py` 1.4.0。只读取 `sub-*/func/*_desc-confounds_timeseries.tsv` 和 JSON，不将同目录 events TSV 混入回归。
 
-2026-10-28 09:20 起的只读扫描，以既有 task fMRIPrep 清单为范围：
+2026-10-28 再次更新后的只读扫描，以既有 task fMRIPrep 清单为范围：
 
 | 任务 | 上游 run | 匹配 confounds | 缺失 |
 | --- | ---: | ---: | ---: |
@@ -15,13 +15,9 @@
 | switch | 434 | 432 | 2 |
 | 合计 | 1,522 | 1,507 | 15 |
 
-上游 569 人中，568 人至少匹配一个任务；外部目录共 1,513 份 confounds，6 份在现有上游清单之外，不自动纳入。外部 summary 为 1,513 个 ok、15 个 error；错误消息包括 11 个无完整 CSV、2 个事件超出 BOLD 时长、2 个无匹配 PsychoPy CSV。
+上游 569 人中，568 人至少匹配一个任务；当前外部目录共 1,507 份 confounds，全部在现有上游清单之内。缺失的 15 个 run 保留在审计与运行 registry，不自动补齐。
 
-全量匹配项的 TSV 行数与其 JSON `NFrames` 一致，`SourceBOLD` 与清单一致，JSON TR 与 fMRIPrep BOLD JSON 一致，任务列无非有限值或常量。此扫描未重新执行全部影像、CIFTI 与 Slurm 完成审计。
-
-**当前 1,507 个匹配项均未解决 STC 采样偏移问题。** 它们的 `FrameTimeOffsetSeconds` 全为 0；对应 STC BOLD 的 `StartTime` 为 0.96 秒（279 个）或 0.959 秒（1,228 个）。准备审计会将其明确列为未就绪，提交 dry-run、正式提交及启动均拒绝这些输入。
-
-代码不提供忽略时间偏移的开关，不改写外部文件，不将该差异自动当作已经校正。需核对上游生成器、scanner trigger 与 frame times 定义；若设计确实采样于错误时点，应由上游从确认的任务时序重新生成数值及对应 provenance，不能只改 JSON 标签。更新后重新 prepare。
+旧 1.3.1 文件的零偏移问题记录在[实现日志](sessions/2026-10-28_task_background_fc_implementation.md)。1.4.0 抽查已将 `FrameTimeOffsetSeconds` 对齐各 run 的 0.96／0.959 秒，并记录 `FrameTimeOffsetSource=fMRIPrep StartTime` 及参考 JSON。全量 prepare 仍逐项核对原始 BOLD、CIFTI、TSV、TR、身份和采样参考。代码不改写外部文件，也不提供忽略时间偏移的开关。
 
 ## 模型与路径
 
@@ -79,7 +75,7 @@ uv run --offline --no-sync efny-imaging run --dataset THU --scope task \
   --stage xcpd --task sst --subject <subject> --dry-run
 ```
 
-该命令仅展示参数，不表示输入已就绪。以下提交 dry-run 会真正验证上游完成记录、采样时间及 prepared 输入来源；当前外部文件会在这里报时间偏移错误，不能继续正式提交。
+该命令仅展示参数，不表示输入已就绪。以下提交 dry-run 会真正验证上游完成记录、采样时间及 prepared 输入来源。
 
 ```bash
 uv run --offline --no-sync efny-imaging submit --dataset THU --scope task \
@@ -87,6 +83,21 @@ uv run --offline --no-sync efny-imaging submit --dataset THU --scope task \
 ```
 
 ## 输入对齐后的试跑与下游
+
+全量 prepare 完成后，可用单 CPU 控制作业冻结范围并自动推进。该作业必须依赖 prepare 成功退出，registry 路径每轮唯一：
+
+```bash
+sbatch --dependency=afterok:<prepare_job_id> --kill-on-invalid-dep=yes \
+  --job-name thu_background_pilot \
+  --output outputs/logs/neuroimaging/xcpd/THU/task_background/pilot_all_%j.out \
+  --error outputs/logs/neuroimaging/xcpd/THU/task_background/pilot_all_%j.err \
+  scripts/neuroimaging/submit_task_background.sbatch pilot \
+  outputs/logs/neuroimaging/xcpd/THU/task_background/run_<timestamp>.json
+```
+
+控制作业先核对三个任务的全部阻塞原因：仅缺失 confounds 的 run 可保留为明确未提交项；任何现有文件的科学不一致均停止本轮。试跑按实际采样偏移和 SST 是否有 cue 选取代表，冻结全部就绪被试及试跑名单。三个任务的试跑成功后，依赖作业再次检查真实联合设计、时间轴、ROI 和成功记录，通过才提交其余被试；每个任务分别安排 afterok 全批完成审计。任何试跑失败均不启动剩余批次，保留日志与逐次提交回执，不自动重试。已有提交或产物时禁止重复初始化。
+
+registry 保存代码 commit、干净工作区、路径、冻结范围、缺失 run、试跑／批量作业和完整提交命令；输入快照、版本、完整容器命令与执行记录由原 pipeline 保存。最终完成审计独立写入各 task 目录，不并发改写共同 registry。本入口仅推进 XCP-D，不自动增加头动筛选、跨 run 汇总或独立 background_fc 导出。
 
 先更新／核清上游时间参考，重新 prepare，并审核逐项原因和被试范围。首次仅提交少量覆盖三个任务的样本；删除提交命令的 `--dry-run` 才会执行 sbatch。submit 默认检查所选任务清单中的全部被试，不自动改用就绪名单；使用明确审核后的 `--subjects` 控制范围。
 
@@ -125,7 +136,7 @@ $env:EFNY_TEST_BASH = 'C:\Program Files\Git\bin\bash.exe'
 uv run --offline --no-sync --python .venv/Scripts/python.exe python -m unittest discover -s tests -p 'test_*.py' -q
 ```
 
-测试覆盖原 rest 流程、task fMRIPrep 记录兼容、任务子集、无 run 名称、实际列集合、缺失／错位／非有限设计、输入变更、容器命令／联合设计登记、逐 run FC 与标签。合成文件位于 `temp/smoke_*` 并由测试清理。真实容器试跑仍待时间参考问题解决。
+测试覆盖原 rest 流程、task fMRIPrep 记录兼容、任务子集、无 run 名称、实际列集合、缺失／错位／非有限设计、输入变更、容器命令／联合设计登记、逐 run FC 与标签。合成文件位于 `temp/smoke_*` 并由测试清理。真实试跑与最终批次完成情况以集群记录为准。
 
 - [XCP-D 26.0.2 任务回归](https://xcp-d.readthedocs.io/en/26.0.2/usage.html#task-regression)
 - [XCP-D 26.0.2 内置 36P](https://github.com/PennLINC/xcp_d/blob/26.0.2/xcp_d/data/nuisance/36P.yml)
