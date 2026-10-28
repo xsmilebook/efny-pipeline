@@ -11,6 +11,11 @@ registry="${2:?New or existing run registry JSON required}"
 task="${3:-all}"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 uv sync --check --offline --frozen --python 3.11 --python-platform x86_64-manylinux_2_17
+if [[ "$phase" == batch ]]; then
+    singularity_module=$(uv run --offline --no-sync python -c \
+        'import json; print(json.load(open("configs/neuroimaging_stc.json"))["tools"]["singularity_module"])')
+    module load "$singularity_module"
+fi
 uv run --offline --no-sync python - "$phase" "$registry" "$task" <<'PY'
 """Freeze prepared task scope, gate the batch on real pilots, and audit products."""
 import json
@@ -131,6 +136,14 @@ else:
         assert not any("batch_jobs" in item for item in record["tasks"].values()), "Batch already launched"
         for task in configs:
             audit(task, record["tasks"][task]["pilots"], "pilot")
+        # Use the installed XCP-D/Nilearn filter implementation to test whether
+        # real residuals are orthogonal to the design after its actual filtering.
+        root = Path.cwd()
+        subprocess.run(["singularity", "exec", "--cleanenv", "-B", f"{root}:{root}:rw",
+                        "--env", "OMP_NUM_THREADS=1,OPENBLAS_NUM_THREADS=1,MKL_NUM_THREADS=1",
+                        configs["sst"]["tools"]["xcpd_image"], "python",
+                        str(root / "scripts/neuroimaging/audit_task_pilot_residuals.py"),
+                        str(registry)], check=True)
         # All tasks' pilots must pass before the first remaining subject is submitted.
         for task in configs:
             item = record["tasks"][task]

@@ -30,3 +30,7 @@ sbatch --parsable --job-name=thu_task_background_prepare \
 本地 36 项 unittest 全部通过（12.185 秒），包含原 34 项科学与命令验证，以及“现有但不合格的设计阻止全部任务提交”“任一任务试跑完成审计失败阻止全部正式批次”两项新增验证。新 sbatch 通过 `bash -n`，`git diff --check` 通过；合成测试临时目录自动清理。验证代码为 `ba7a13c` 加本轮提交内容，Git Bash 入口与前次一致。
 
 试跑与批量运行尚未完成。后续作业号和验证结果继续补充于此；不以提交状态声明全批分析成功。
+
+控制入口第一版 `40f9ebc` 已推送并在集群干净工作区快进同步。依赖 prepare 的试跑控制作业为 `15459638`，registry 为 `outputs/logs/neuroimaging/xcpd/THU/task_background/run_20261028T1650.json`，初始化时记录实际运行代码 commit。完整提交参数为 `sbatch --parsable --dependency=afterok:15459635 --kill-on-invalid-dep=yes --job-name=thu_background_pilot --output=outputs/logs/neuroimaging/xcpd/THU/task_background/pilot_all_%j.out --error=outputs/logs/neuroimaging/xcpd/THU/task_background/pilot_all_%j.err scripts/neuroimaging/submit_task_background.sbatch pilot outputs/logs/neuroimaging/xcpd/THU/task_background/run_20261028T1650.json`。
+
+额外补充真实残差投影门槛：通过读取已配置 26.0.2 镜像内 `xcp_d/utils/utils.py` 核实 detrend→同带通→回归的实际顺序及 padding。批量控制阶段在同镜像中调用 `audit_task_pilot_residuals.py`，要求三套图谱残差与滤波后联合设计的最大归一化内积 <1e-5，记录滤波后设计秩。保留 task 信号的合成反例必须被拒绝；不改变正式回归参数，不向项目 uv 环境新增 Nilearn／SciPy。

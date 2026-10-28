@@ -99,6 +99,8 @@ sbatch --dependency=afterok:<prepare_job_id> --kill-on-invalid-dep=yes \
 
 registry 保存代码 commit、干净工作区、路径、冻结范围、缺失 run、试跑／批量作业和完整提交命令；输入快照、版本、完整容器命令与执行记录由原 pipeline 保存。最终完成审计独立写入各 task 目录，不并发改写共同 registry。本入口仅推进 XCP-D，不自动增加头动筛选、跨 run 汇总或独立 background_fc 导出。
 
+批量放行还在同一 XCP-D 镜像内执行 `audit_task_pilot_residuals.py`：将实际 design.tsv 按已安装 Nilearn 的 `standardize_signal(detrend=True, standardize=False)` 和 `butterworth` 规则处理，沿用 0.01–0.1 Hz、order 2、constant padding、padlen=N−1，与镜像 `xcp_d/utils/utils.py` 的 `_denoise_with_nilearn` 一致。dummy 0、无 censoring 时，残差应与处理后的联合设计正交，parcel 平均保留此关系。逐 run／atlas 保存最大归一化内积和滤波后秩；归一化内积须小于 `1e-5`（允许 float32 保存误差）。原始 task 列与残差的普通相关不是该门槛。该检查不推导自相关校正后的有效自由度。
+
 先更新／核清上游时间参考，重新 prepare，并审核逐项原因和被试范围。首次仅提交少量覆盖三个任务的样本；删除提交命令的 `--dry-run` 才会执行 sbatch。submit 默认检查所选任务清单中的全部被试，不自动改用就绪名单；使用明确审核后的 `--subjects` 控制范围。
 
 每次启动重新核查 custom TSV、JSON、原始 BOLD、fMRIPrep confounds 和 CIFTI 的身份、帧数、TR、STC 偏移、dummy 与任务列。输入 provenance、文件大小／mtime 和完整元数据须与 prepare 时相同；不计算内容哈希。容器开始前保存输入、设置和上游完成时间，结束时再次比较，运行期间被修改的设计不能登记为成功。
