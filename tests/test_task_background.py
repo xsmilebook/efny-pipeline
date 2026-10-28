@@ -275,7 +275,7 @@ class BackgroundTests(unittest.TestCase):
         for suffix in ("space-fsLR_den-91k_desc-denoised_bold.dtseries.nii",
                        "space-fsLR_atlas-synthetic_den-91k_stat-mean_timeseries.ptseries.nii"):
             path = derivative_path(self.config, scan, "xcpd", suffix)
-            image = nib.load(path)
+            image = nib.load(path, mmap=False)
             wrong = nib.Cifti2Image(image.get_fdata(), header=nib.Cifti2Header.from_axes(
                 (SeriesAxis(0, 3, 100), image.header.get_axis(1))))
             nib.save(wrong, path)

@@ -40,3 +40,26 @@ sbatch --parsable --job-name=thu_task_background_prepare \
 完整准备的 SST 部分已通过：562/567 run 就绪，111 个偏移 0.96、451 个偏移 0.959；5 个阻塞项均缺少 TSV 和 JSON，没有时间错位或非有限设计。实际 SST 代表样本覆盖两种偏移 × 有／无 cue 四个组合，其余两个任务仍在同一准备作业顺序审计中。
 
 补充 task 残差 TR 与原始 BOLD 的直接对照，防止 denoised CIFTI 和三个 ptseries 彼此一致、却共同带有错误 TR 的静默问题；rest 规则不变。新增反例测试将残差与 ptseries 同时从 2 秒改为 3 秒，必须拒绝。集群 uv 环境实测 Python 3.11.15、NumPy 2.2.6、NiBabel 5.4.2；镜像实测 XCP-D 26.0.2、Python 3.12.12、Nilearn 0.12.1、NumPy 2.2.6、SciPy 1.15.2。
+
+## 实际试跑与当前状态
+
+完整 prepare `15459635` 已 COMPLETED、0:0，用时 14:54：sst 562/567、nback 513/521、switch 432/434；合计 1,507/1,522 个 run 就绪。所有现有文件均通过，15 个阻塞项均为缺少 custom TSV／JSON，没有额外科学不一致。1,507 个 run 逐 task 冻结，8 个试跑包括 SST 的 0.96／0.959 × 有／无 cue 四种组合，nback 和 switch 各覆盖两种偏移。
+
+试跑控制 `15459638` 已 COMPLETED、0:0，用时 8 秒，记录分析代码 `f406745`、干净工作区，registry 为 `run_20261028T1650.json`。
+
+| 任务 | 被试 | 实际 XCP-D 作业 |
+| --- | --- | --- |
+| sst | sub-THU202311180133 | 15459667 |
+| sst | sub-THU202311180134 | 15459668 |
+| sst | sub-THU202507100634 | 15459669 |
+| sst | sub-THU202507110640 | 15459670 |
+| nback | sub-THU202311180133 | 15459671 |
+| nback | sub-THU202311180134 | 15459672 |
+| switch | sub-THU202311180133 | 15459673 |
+| switch | sub-THU202312170155 | 15459674 |
+
+已确认八个作业均在 fat14 RUNNING，stdout 显示实际 XCP-D 26.0.2 正在构建工作流，参数为 36P＋task、1/1 线程、三套图谱。stderr 当前仅环境只读检查及预期的“FD scrubbing disabled，min-time 无效”提示，无已见异常堆栈。实际去噪、联合设计验收和残差投影尚未完成。
+
+批量控制 `15459675` 已提交，依赖 `afterok:15459667:15459668:15459669:15459670:15459671:15459672:15459673:15459674`，`--kill-on-invalid-dep=yes`；先再次审计全部八个试跑及其真实残差投影，再提交 SST 558、nback 511、switch 430，合计 1,499 个剩余被试×任务作业，并分别安排全批完成审计。当前为依赖等待状态，不能将这 1,499 项写为已提交或已完成。
+
+本地最终测试共发现 39 项：37 项通过、2 项因本地无 Nilearn 跳过；这两项已在上述 XCP-D 镜像的作业 `15459646` 通过。新增 TR 反例最初因 Windows 内存映射文件覆盖失败，修为测试读取 `mmap=False` 后完整复跑通过（12.974 秒），分析逻辑无变更。该失败遗留 `D:\projects\efny-pipeline\temp\smoke_task_background_5e81whes`；对这一明确自有测试目录的路径边界验证与 `Remove-Item -LiteralPath ... -Recurse -Force` 被自动审批策略拒绝，未使用其他手段绕过，目录暂留。后续正常测试目录自动清理。

@@ -11,7 +11,7 @@
 
 [x] 以现有 task fMRIPrep 清单及完成记录为上游，实现独立 background 清单与逐 subject/task/run 审计；就绪／阻塞明确列出，不覆盖 fMRIPrep 清单。更新文件的交集为 1,507/1,522 个 run；实际运行范围仍待审核。
 
-[ ] 核对 custom TSV、JSON、BOLD、原始 fMRIPrep confounds 与 CIFTI 的身份、行数、TR、dummy 和 STC 时间参考；解决抽查所见 `FrameTimeOffsetSeconds=0` 与 BOLD `StartTime≈0.96 s` 的差异后再试跑，保留原协变量。
+[x] 核对 custom TSV、JSON、BOLD、原始 fMRIPrep confounds 与 CIFTI 的身份、行数、TR、dummy 和 STC 时间参考；1.4.0 文件的 1,507 个现有 run 均通过完整 prepare（作业 15459635 COMPLETED、0:0），15 个缺失项保留。
 
 [x] 在 `configs/neuroimaging_stc.json` 增加独立 `task_xcpd` 设置，记录只读 custom 根目录与 YAML 路径；新增 `configs/xcpd_36p_task_background.yml`，完整保留 26.0.2 内置 36P，增加匹配 `^task_.*$` 的任务 nuisance 项，不使用 `signal__` 前缀。
 
@@ -23,10 +23,10 @@
 
 [x] 扩展科学定向合成验证与模拟容器命令验证；真实容器的残差回归效果和滤波后设计秩留待试跑核查。测试临时产物自动清理。
 
-[ ] 更新 README、方法补充和当天 session，提交并推送代码后检查集群工作区并快进同步；在 `q_fat_c` 以 1 CPU 和 1/1 线程试跑少量覆盖三个任务的样本，审计实际联合设计矩阵、残差帧数／TR／ROI、回归效果、FC、stderr 与 Slurm 退出码，再按审核后的冻结清单提交批量并记录运行来源。
+[ ] 更新 README、方法补充和当天 session，提交并推送代码后检查集群工作区并快进同步；在 `q_fat_c` 以 1 CPU 和 1/1 线程试跑少量覆盖三个任务的样本，审计实际联合设计矩阵、残差帧数／TR／ROI、回归效果、FC、stderr 与 Slurm 退出码，再按审核后的冻结清单提交批量并记录运行来源。当前代码已同步、8 个真实试跑作业 15459667–15459674 已运行，控制作业 15459675 将在试跑及残差投影门槛通过后提交余下 1,499 个 run；完整完成审计仍待运行。
 
 ## Open questions
 
 - 输入覆盖：2026-10-28 再次更新后匹配 1,507/1,522 个 run、568/569 人，仍缺 15 个 run。当前外部目录恰有 1,507 份，无清单外 confounds；完整 prepare 在计算节点运行。
-- 时间参考：生成器已更新为 1.4.0，抽查按各 run 的 fMRIPrep StartTime 声明 0.96／0.959 秒，并记录参考 JSON；完整影像与协变量审计通过后才进入真实试跑。代码不自动修正或忽略差异。
+- 时间参考：生成器已更新为 1.4.0，1,507 个 run 的 0.96／0.959 秒偏移均与对应 fMRIPrep StartTime 一致，完整审计通过后已进入真实试跑。代码不自动修正或忽略差异。
 - QC／汇总：若后续需要筛选后的被试×任务 FC 或多 run 汇总，应先明确 task 的头动阈值、最低有效时长和汇总口径；本计划先保留逐 run 结果及描述指标。

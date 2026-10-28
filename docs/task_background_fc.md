@@ -17,7 +17,7 @@
 
 上游 569 人中，568 人至少匹配一个任务；当前外部目录共 1,507 份 confounds，全部在现有上游清单之内。缺失的 15 个 run 保留在审计与运行 registry，不自动补齐。
 
-旧 1.3.1 文件的零偏移问题记录在[实现日志](sessions/2026-10-28_task_background_fc_implementation.md)。1.4.0 抽查已将 `FrameTimeOffsetSeconds` 对齐各 run 的 0.96／0.959 秒，并记录 `FrameTimeOffsetSource=fMRIPrep StartTime` 及参考 JSON。全量 prepare 仍逐项核对原始 BOLD、CIFTI、TSV、TR、身份和采样参考。代码不改写外部文件，也不提供忽略时间偏移的开关。
+旧 1.3.1 文件的零偏移问题记录在[实现日志](sessions/2026-10-28_task_background_fc_implementation.md)。1.4.0 已将 `FrameTimeOffsetSeconds` 对齐各 run 的 0.96／0.959 秒，并记录 `FrameTimeOffsetSource=fMRIPrep StartTime` 及参考 JSON。完整 prepare 作业 `15459635` 已逐项核对原始 BOLD、CIFTI、TSV、TR、身份和采样参考，1,507 个现有 run 全部通过，另 15 个仅缺失文件。代码不改写外部文件，也不提供忽略时间偏移的开关。
 
 ## 模型与路径
 
