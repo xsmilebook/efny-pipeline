@@ -22,3 +22,9 @@
 - uv 环境沿用项目 `.venv`；不安装依赖、不升级镜像。实际版本和完整容器命令由原 sbatch 与完成记录保存。
 
 本次仅增加恢复说明，分析代码保持不变。提交前记录代码 commit、干净工作区、单例冻结名单和新作业回执；随后记录重提和审计作业号及实际状态。此时修复尚未完成。
+
+12:39 已提交恢复作业 `15463759`，q_fat_c、1 CPU；代码 `9842ef1`、工作区干净，已推送并在集群快进同步。uv 离线只读环境检查通过。输入冻结名单为 nback 日志下 `retry_20261029_subjects.txt`，只有 `sub-THU202411100424`。使用现有 `efny-imaging submit --stage xcpd --scope task --task nback` 的同一提交函数，完整 sbatch 命令与回执在 `recovery_20261029.json` 和新增 `submitted_*.csv`。
+
+原入口完整命令为 `scripts/neuroimaging/run_xcpd_task_background.sbatch THU sub-THU202411100424 configs/neuroimaging_stc.json /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline nback`（提交时配置使用完整绝对路径）。原失败日志、数据及缓存均保留，无删除操作。复核 `ead8cd3` 到本次运行提交的 `src/imaging`、`configs` 和 `scripts/neuroimaging` 无差异。
+
+已同时提交 nback 全批审计 `15463760`，依赖 `afterok:15463759` 且 `--kill-on-invalid-dep=yes`。使用原 `submit_task_background.sbatch audit <run_20261028T1650.json> nback`，范围为原冻结 513 人，排除原 8 个缺失 confounds 的 nback run；不重新拟定范围。审计日志位于 task_background 根目录的 `recovery_audit_nback_15463760.{out,err}`。
