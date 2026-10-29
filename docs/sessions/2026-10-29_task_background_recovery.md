@@ -28,3 +28,11 @@
 原入口完整命令为 `scripts/neuroimaging/run_xcpd_task_background.sbatch THU sub-THU202411100424 configs/neuroimaging_stc.json /ibmgpfs/cuizaixu_lab/xuhaoshu/projects/efny-pipeline nback`（提交时配置使用完整绝对路径）。原失败日志、数据及缓存均保留，无删除操作。复核 `ead8cd3` 到本次运行提交的 `src/imaging`、`configs` 和 `scripts/neuroimaging` 无差异。
 
 已同时提交 nback 全批审计 `15463760`，依赖 `afterok:15463759` 且 `--kill-on-invalid-dep=yes`。使用原 `submit_task_background.sbatch audit <run_20261028T1650.json> nback`，范围为原冻结 513 人，排除原 8 个缺失 confounds 的 nback run；不重新拟定范围。审计日志位于 task_background 根目录的 `recovery_audit_nback_15463760.{out,err}`。
+
+## 单例恢复结果
+
+12:51 重提 `15463759` 已 COMPLETED、0:0，用时 11:44。容器 workflow 成功并正常生成 HTML（95,212 字节），随后 finish-container 成功完成；未删除任何旧结果或工作缓存。当前 stderr 仅有 uv 只读检查和禁用 scrubbing 时的预期 min-time 提示，没有原来的 IndexError。
+
+完成 marker 记录 XCP-D v26.0.2、代码 `05dfd68`、工作区干净、作业 15463759。期间仅同步恢复说明，分析代码和参数仍与原批一致。该 run 的联合设计为 36P＋3 个 task 项，219 帧，加入截距和线性趋势后的设计秩为 38、名义剩余自由度 181；该数值不代表校正自相关后的有效自由度。task 偏移 0.959 秒通过输入快照检查，残差帧数、TR、三套图谱 ROI／有限值及实际 task 列值检查均通过。运行时 `recovery_20261029.json` 已补充这次正常完成的来源、报告大小与设计审计。
+
+单例故障已经修复，全批审计 15463760 尚待正常结束后才能将 nback 标为全批验收通过。原 15460512 失败和 15460819 取消记录保留，不将历史失败改写为成功。
