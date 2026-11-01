@@ -41,3 +41,5 @@
 首个构建作业 `15494321` 在下载前因 PATH 不包含压缩工具所在目录而退出（FAILED、1:0，1 秒）；现场确认 mksquashfs 位于 `/usr/sbin/mksquashfs`，明确补入 `/usr/sbin` 后重提，不自动寻找其他版本或修改系统配置。旧影像、confounds 和 XCP-D 结果未受影响。
 
 构建重提 `15494322` 已在计算节点开始下载官方镜像；代码 `94b46bb`。准备 `advance_task_motion_refresh.sbatch`：只有单人三个 run 的实际运动重算与 audit_run 审计通过且 Slurm 0:0，才用指定 batch 脚本提交原冻结名单中的剩余 568 人。按每次成功回执冻结 569 人／作业 TSV，afterok 全部重算成功后提交全量审计与 --apply；--apply 内部核验完成后才备份替换、清理、重新 prepare 并衔接原 task XCP-D 试跑链。任何前置失败都不覆盖或删除正式数据。首个权限失败的历史作业不混入成功重算清单。
+
+依赖链已实际提交：构建 15494322 → 单人三个 task 试算 15494323 → 试算数值审计 15494324 → 其余 568 人提交控制 15494325，均使用 afterok 和 kill-on-invalid-dep。当前代码 `dfc6597`，两端工作区干净；提交时显式向 PATH 加入账户 uv 目录，后续计算节点沿用离线已准备的 .venv，不在作业中安装依赖。`pilot_current_jobs.tsv` 固定本轮有效试跑回执，首次权限失败的旧记录仍保留。run.json 的 image 已改为自有目标，并单独保留 previous_unreadable_image、官方来源、构建和后续作业号及命令；此时镜像下载中、试算依赖等待，不视为已经重算或完成替换。
