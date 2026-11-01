@@ -99,6 +99,9 @@ XCP-D 的可选图谱挂载参数允许为空，作业脚本兼容集群 Bash 4.
 THU 静息态校正头动 confounds 后重算 XCP-D、头动和 FC，使用
 [替换与重算入口](docs/thu_rest_confounds_refresh.md)；该入口先核验全部 run，
 备份原 confounds 和来源记录，再清理旧 XCP-D 缓存与下游结果，并通过真实试跑衔接全批重算。
+THU task 的 25.2.7 头动修复使用仓库中的 `batch_run_recomputemotion.sh` 与
+`recompute_motion_25_2_7.sh` task 适配入口；与 rest 的输入和结果隔离，
+先 staging 核验再覆盖及重跑，见[本轮记录](docs/sessions/2026-11-01_task_motion_refresh.md)。
 节点故障后确认存在损坏缓存时，可按明确失败名单使用
 `scripts/neuroimaging/retry_xcpd_clean.sbatch` 清理指定被试并重提，
 该入口的删除范围和输入清单要求见上述执行说明。

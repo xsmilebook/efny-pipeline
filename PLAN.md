@@ -4,6 +4,8 @@
 
 ## Scope
 
+2026-11-01 新授权：用用户指定的 25.2.7 重算脚本修复全部 THU task 的头动 confounds，核验并备份覆盖，再删除旧 task XCP-D 结果和缓存，按原参数重新试跑及提交。此前的 1,507-run 完成状态属于修复前版本。本次执行记录见 `docs/sessions/2026-11-01_task_motion_refresh.md`。
+
 - In: THU task 的协变量审计、XCP-D 自定义回归、显式 `task_background` 路径、逐 task/run FC、提交与完成审计。
 - Out: 不修改外部协变量或现有预处理产物，不重跑 fMRIPrep，不改变 rest 分析，不合并不同任务。2026-10-28 用户进一步授权对修正后的输入实际提交 XCP-D。
 
