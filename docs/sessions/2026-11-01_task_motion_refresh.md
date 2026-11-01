@@ -45,3 +45,9 @@
 依赖链已实际提交：构建 15494322 → 单人三个 task 试算 15494323 → 试算数值审计 15494324 → 其余 568 人提交控制 15494325，均使用 afterok 和 kill-on-invalid-dep。当前代码 `dfc6597`，两端工作区干净；提交时显式向 PATH 加入账户 uv 目录，后续计算节点沿用离线已准备的 .venv，不在作业中安装依赖。`pilot_current_jobs.tsv` 固定本轮有效试跑回执，首次权限失败的旧记录仍保留。run.json 的 image 已改为自有目标，并单独保留 previous_unreadable_image、官方来源、构建和后续作业号及命令；此时镜像下载中、试算依赖等待，不视为已经重算或完成替换。
 
 新增依赖控制脚本通过 Git Bash 语法检查。完整 Python 测试复跑共 43 项：41 项通过、2 项容器专用测试跳过，耗时 15.727 秒，无新依赖。当前 task custom 输入文件身份复核仍与原冻结范围一致：SST 562、nback 513、switch 432，后续不会静默扩大或缩小范围。Docker Hub 的 amd64 25.2.7 标签显示压缩大小约 2.65 GB；构建仍需完成下载、组装和实际版本／接口验证。
+
+## 镜像构建与真实头动试算通过
+
+构建 15494322 最终 COMPLETED、0:0，用时 45 分 13 秒。实际压缩进程参数包含 `-processors 3`；生成 SIF 后由 Singularity 自动清理解包目录，再执行版本／接口验证。正式镜像为 `/ibmgpfs/cuizaixu_lab/xuhaoshu/packages/singularity/fmriprep-25.2.7.simg`，大小 2,413,936,640 字节。容器内确认 fMRIPrep 25.2.7、Python 3.12.11、Nipype 1.12.0、NiWorkflows 1.15.3，FSLMotionParams、FramewiseDisplacement、ExpandModel 和 spike_regressors 均可导入。构建代码 94b46bb，官方来源和完整命令保存在构建脚本／作业日志；未复制受限镜像，未重新运行完整 fMRIPrep。
+
+随后 sub-THU202311180133 的真实重算 15494323 成功，3/3 run，20 秒；数值审计 15494324 成功，7 秒，使用代码 0c0a009，审计完成于 UTC 2026-11-01 09:06:02。nback／sst／switch 分别为 219／161／209 帧；24 项、50 mm FD、motion_outlier 规则、BOLD／CIFTI 时间轴和非头动列不变性均通过。三个 run 的 FD 均发生修正，平均值分别从 0.06419040／0.04570932／0.04105949 mm 变为 0.06418429／0.04570459／0.04101671 mm；显示值只做四舍五入，完整精度见 `confounds_audit_pilot_15494324.csv`。原／新 motion_outlier 均为零。此时 `--apply=false`，正式 confounds 与旧 task XCP-D 尚未改变；剩余 568 人由依赖控制作业 15494325 衔接。

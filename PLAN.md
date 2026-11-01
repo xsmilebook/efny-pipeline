@@ -7,7 +7,7 @@
 2026-11-01 新授权：用用户指定的 25.2.7 重算脚本修复全部 THU task 的头动 confounds，核验并备份覆盖，再删除旧 task XCP-D 结果和缓存，按原参数重新试跑及提交。此前的 1,507-run 完成状态属于修复前版本。本次执行记录见 `docs/sessions/2026-11-01_task_motion_refresh.md`。
 
 - In: THU task 的协变量审计、XCP-D 自定义回归、显式 `task_background` 路径、逐 task/run FC、提交与完成审计。
-- Out: 不修改外部协变量或现有预处理产物，不重跑 fMRIPrep，不改变 rest 分析，不合并不同任务。2026-10-28 用户进一步授权对修正后的输入实际提交 XCP-D。
+- Out: 不修改外部 task 协变量或 fMRIPrep 影像，不重跑完整 fMRIPrep，不改变 rest 分析，不合并不同任务。2026-10-28 用户授权实际提交 XCP-D；2026-11-01 进一步授权备份后更新 task 头动 confounds 并重建其下游结果。
 
 ## Action items
 
@@ -30,8 +30,9 @@
 ## 2026-11-01 task motion refresh
 
 - [x] 检查并保存指定原脚本，完成 task 适配及清理边界／运动数值检查测试；明确保留 rest、fMRIPrep 影像、BIDS 和 FreeSurfer。
-- [ ] 自行构建并验证官方 fMRIPrep 25.2.7 镜像到自有 packages/singularity；当前构建 15494322 正在下载，后续已设置 afterok。
-- [ ] 单人 3 task 头动重算及审计（15494323／15494324）通过后，控制 15494325 提交其余 568 人，完整核验原 1,522 run 的运动修正和非运动列不变。
+- [x] 自行构建官方 fMRIPrep 25.2.7 镜像到自有 packages/singularity；15494322 COMPLETED、0:0，版本和 FSLMotionParams／FD／ExpandModel 等接口验证通过。
+- [x] 单人 3 task 头动重算及审计（15494323／15494324）COMPLETED、0:0，帧数、24 项／FD、outlier 和非运动列检查通过。
+- [ ] 控制 15494325 提交其余 568 人，完整核验原 1,522 run 的运动修正和非运动列不变。
 - [ ] 备份原 confounds／完成记录，原子替换并追加来源；归档日志，验证终态／锁／路径后清理旧 task XCP-D、work/temp 及独立 FC。
 - [ ] 重新 prepare 并核对原 1,507-run 范围，完成真实 XCP-D 试跑、残差验收、全批重跑与最终对账。
 
