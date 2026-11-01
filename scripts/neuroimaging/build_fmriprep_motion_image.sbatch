@@ -20,6 +20,7 @@ export http_proxy="$proxy_url" HTTP_PROXY="$proxy_url" https_proxy="$proxy_url" 
 export ftp_proxy="$proxy_url" FTP_PROXY="$proxy_url" all_proxy="$proxy_url" ALL_PROXY="$proxy_url"
 
 # Singularity 3.7 has no per-build mksquashfs thread flag; constrain its PATH-resolved packer.
+export PATH="/usr/sbin:$PATH"
 export MOTION_BUILD_MKSQUASHFS
 MOTION_BUILD_MKSQUASHFS=$(command -v mksquashfs)
 cat > "${build_dir}/bin/mksquashfs" <<'SH'

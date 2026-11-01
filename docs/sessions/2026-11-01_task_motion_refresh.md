@@ -37,3 +37,5 @@
 用户取消复制方案，明确授权自行打包 fMRIPrep 25.2.7。使用 NiPreps 官方镜像 `docker://nipreps/fmriprep:25.2.7`，按[官方 Singularity 方法](https://www.nipreps.org/apps/singularity/#preparing-a-singularity-image)构建到自有目录 `packages/singularity/fmriprep-25.2.7.simg`。登录节点短时测试代理 `http://10.11.100.5:3128` 可连接 registry-1.docker.io，Docker Hub 的 25.2.7 标签可访问；共享文件系统可用空间约 104 TB。
 
 新增 `build_fmriprep_motion_image.sbatch`，在 q_fat_c 申请 3 CPU，沿用 Singularity 3.7.0 和原代理；不修改管理员配置。该版本无逐次构建的压缩线程 flag，且系统 mksquashfs procs=0，所以仅在本次构建 PATH 中给真实 mksquashfs 追加 `-processors $SLURM_CPUS_PER_TASK`，Go 并行也限制为申请核数。临时 bundle 和 OCI cache 位于自有容器目录的独立作业子目录，失败时保留来源和缓存，不覆盖任何已有镜像。先构建唯一临时镜像，实际验证 fMRIPrep=25.2.7，并导入指定计算脚本所需 FSLMotionParams／FD／ExpandModel／spike_regressors 后，才更名发布到正式路径。这里只构建工具，不运行完整 fMRIPrep。
+
+首个构建作业 `15494321` 在下载前因 PATH 不包含压缩工具所在目录而退出（FAILED、1:0，1 秒）；现场确认 mksquashfs 位于 `/usr/sbin/mksquashfs`，明确补入 `/usr/sbin` 后重提，不自动寻找其他版本或修改系统配置。旧影像、confounds 和 XCP-D 结果未受影响。
