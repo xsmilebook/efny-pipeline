@@ -31,3 +31,9 @@
 用户进一步要求将镜像复制到 `/ibmgpfs/cuizaixu_lab/xuhaoshu/packages/singularity/` 再使用。已尝试从指定原镜像复制到该目录的 `fmriprep-25.2.7.simg`，采用 `.copying` 临时文件、大小核验后更名；但在打开源文件时仍被真实文件系统权限拒绝，未生成目标镜像，也未创建部分副本。已说明复制仍需要源目录／文件读取权限，请用户开放源读取或由有权限账号放置镜像。任务计算入口已改为用户指定的自有目标路径，尚不能启动真实重算。
 
 核验与清理代码提交为 `d17a682`，已推送并在集群干净工作区快进同步。集群 uv 离线只读检查通过，模块 --help 可正常使用，三项 task 清理边界测试在 Linux 同环境通过（0.017 秒）。最终复查源镜像仍不可读、自有目标镜像不存在、没有遗留 .copying 副本；因此不得提交后续重算、覆盖或删除作业。此次阻塞是源目录的操作系统访问权限，不是自动审批拒绝。
+
+## 按新授权自行构建 25.2.7 镜像
+
+用户取消复制方案，明确授权自行打包 fMRIPrep 25.2.7。使用 NiPreps 官方镜像 `docker://nipreps/fmriprep:25.2.7`，按[官方 Singularity 方法](https://www.nipreps.org/apps/singularity/#preparing-a-singularity-image)构建到自有目录 `packages/singularity/fmriprep-25.2.7.simg`。登录节点短时测试代理 `http://10.11.100.5:3128` 可连接 registry-1.docker.io，Docker Hub 的 25.2.7 标签可访问；共享文件系统可用空间约 104 TB。
+
+新增 `build_fmriprep_motion_image.sbatch`，在 q_fat_c 申请 3 CPU，沿用 Singularity 3.7.0 和原代理；不修改管理员配置。该版本无逐次构建的压缩线程 flag，且系统 mksquashfs procs=0，所以仅在本次构建 PATH 中给真实 mksquashfs 追加 `-processors $SLURM_CPUS_PER_TASK`，Go 并行也限制为申请核数。临时 bundle 和 OCI cache 位于自有容器目录的独立作业子目录，失败时保留来源和缓存，不覆盖任何已有镜像。先构建唯一临时镜像，实际验证 fMRIPrep=25.2.7，并导入指定计算脚本所需 FSLMotionParams／FD／ExpandModel／spike_regressors 后，才更名发布到正式路径。这里只构建工具，不运行完整 fMRIPrep。

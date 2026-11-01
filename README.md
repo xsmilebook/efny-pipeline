@@ -102,6 +102,8 @@ THU 静息态校正头动 confounds 后重算 XCP-D、头动和 FC，使用
 THU task 的 25.2.7 头动修复使用仓库中的 `batch_run_recomputemotion.sh` 与
 `recompute_motion_25_2_7.sh` task 适配入口；与 rest 的输入和结果隔离，
 先 staging 核验再覆盖及重跑，见[本轮记录](docs/sessions/2026-11-01_task_motion_refresh.md)。
+需要准备 25.2.7 容器时，使用 `build_fmriprep_motion_image.sbatch` 从官方版本构建并验证；
+该镜像仅用于头动重算，主 fMRIPrep 影像配置不随之更换。
 节点故障后确认存在损坏缓存时，可按明确失败名单使用
 `scripts/neuroimaging/retry_xcpd_clean.sbatch` 清理指定被试并重提，
 该入口的删除范围和输入清单要求见上述执行说明。
