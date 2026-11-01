@@ -32,7 +32,8 @@
 - [x] 检查并保存指定原脚本，完成 task 适配及清理边界／运动数值检查测试；明确保留 rest、fMRIPrep 影像、BIDS 和 FreeSurfer。
 - [x] 自行构建官方 fMRIPrep 25.2.7 镜像到自有 packages/singularity；15494322 COMPLETED、0:0，版本和 FSLMotionParams／FD／ExpandModel 等接口验证通过。
 - [x] 单人 3 task 头动重算及审计（15494323／15494324）COMPLETED、0:0，帧数、24 项／FD、outlier 和非运动列检查通过。
-- [ ] 控制 15494325 提交其余 568 人，完整核验原 1,522 run 的运动修正和非运动列不变。
+- [x] 控制 15494325 成功提交其余 568 人（15494326–15494893），连同首人冻结 569 个成功提交回执；全量核验／替换 15494894 已设置 afterok 全部重算作业。
+- [ ] 完整核验原 1,522 run 的运动修正和非运动列不变；全批计算仍在进行，尚未覆盖正式 confounds。
 - [ ] 备份原 confounds／完成记录，原子替换并追加来源；归档日志，验证终态／锁／路径后清理旧 task XCP-D、work/temp 及独立 FC。
 - [ ] 重新 prepare 并核对原 1,507-run 范围，完成真实 XCP-D 试跑、残差验收、全批重跑与最终对账。
 

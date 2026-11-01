@@ -51,3 +51,7 @@
 构建 15494322 最终 COMPLETED、0:0，用时 45 分 13 秒。实际压缩进程参数包含 `-processors 3`；生成 SIF 后由 Singularity 自动清理解包目录，再执行版本／接口验证。正式镜像为 `/ibmgpfs/cuizaixu_lab/xuhaoshu/packages/singularity/fmriprep-25.2.7.simg`，大小 2,413,936,640 字节。容器内确认 fMRIPrep 25.2.7、Python 3.12.11、Nipype 1.12.0、NiWorkflows 1.15.3，FSLMotionParams、FramewiseDisplacement、ExpandModel 和 spike_regressors 均可导入。构建代码 94b46bb，官方来源和完整命令保存在构建脚本／作业日志；未复制受限镜像，未重新运行完整 fMRIPrep。
 
 随后 sub-THU202311180133 的真实重算 15494323 成功，3/3 run，20 秒；数值审计 15494324 成功，7 秒，使用代码 0c0a009，审计完成于 UTC 2026-11-01 09:06:02。nback／sst／switch 分别为 219／161／209 帧；24 项、50 mm FD、motion_outlier 规则、BOLD／CIFTI 时间轴和非头动列不变性均通过。三个 run 的 FD 均发生修正，平均值分别从 0.06419040／0.04570932／0.04105949 mm 变为 0.06418429／0.04570459／0.04101671 mm；显示值只做四舍五入，完整精度见 `confounds_audit_pilot_15494324.csv`。原／新 motion_outlier 均为零。此时 `--apply=false`，正式 confounds 与旧 task XCP-D 尚未改变；剩余 568 人由依赖控制作业 15494325 衔接。
+
+控制 15494325 COMPLETED、0:0，用时 13 秒，使用 0c0a009 的干净工作区，于 UTC 09:06:38 提交完剩余 568 人，作业 15494326–15494893。`motion_jobs_all.tsv` 固定全部 569 人与作业的对应关系，其中包括已通过试算的 15494323。全量核验／替换 15494894 已提交，afterok 依赖全部 569 个重算作业；其内部仍依次执行全量科学审计、备份、原子覆盖、旧 task 下游清理、prepare 和原 XCP-D 试跑链，任何门槛失败均不继续后续阶段。run.json 已补充真实镜像大小／软件版本、构建日志及试算验收来源。
+
+UTC 09:07:56 后的 Slurm 快照：569 人中 81 COMPLETED／0:0、25 RUNNING、463 PENDING，未发现失败；15494894 仍在依赖等待。当前只完成镜像与首人验收，不能将批量提交视为全量重算、正式 confounds 替换或新 XCP-D 已完成。代码／文档 4d552dc 已推送并在集群干净工作区快进同步；随后仅追加本段运行记录和计划进度，不改变实际计算脚本。
