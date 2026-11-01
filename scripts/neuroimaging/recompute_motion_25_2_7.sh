@@ -21,7 +21,7 @@ Out="$2"
 OLD="$3"
 [[ -n "$subj" && -n "$Out" ]] || { echo 'Both arguments are required.' >&2; exit 2; }
 
-IMAGE='/ibmgpfs/cuizaixu_lab/xuxiaoyu/softwarepackages/singularity/fmriprep-25.2.7.simg'
+IMAGE='/ibmgpfs/cuizaixu_lab/xuhaoshu/packages/singularity/fmriprep-25.2.7.simg'
 [[ "${OLD%/}" == */fmriprep/THU/task ]] || { echo 'Expected the THU task derivative root.' >&2; exit 2; }
 mkdir -p "$Out"
 [[ "$(readlink -f "$OLD")" != "$(readlink -f "$Out")" ]] || exit 1

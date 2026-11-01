@@ -9,3 +9,23 @@
 先在独立 staging 路径重算一人的三个任务，确认数值和非头动项后提交全量。完整新文件必须全部通过时间轴、非头动列、24 项和 FD 一致性检查，才备份并原子替换 task fMRIPrep confounds。之后归档旧日志、检查终态／锁／路径和符号链接，清理仅属 task_background 的旧 XCP-D 结果、work/temp 及受其影响的下游产物，重新 prepare。沿用三个 task 的真实试跑→残差门槛→全批→审计链，不改变回归、滤波、censoring、atlas 或任务采样偏移。
 
 代码和实际运行作业号、范围、版本及成功／失败状态继续补充；本轮尚未重算或清理正式产物。
+
+## 首次试算与环境阻塞
+
+适配代码 `4b35fbe` 已提交推送并在集群干净工作区快进同步。在 `outputs/logs/neuroimaging/fmriprep/THU/task/confounds_refresh_20261101/` 冻结原输入清单、569 人名单、首人试跑／其余名单、原 1,507-run background 范围，保存外部原脚本副本及 run.json；校正 staging 为其下 `corrected_confounds/`，不会直接写入正式 fMRIPrep。
+
+首次试算 `15494320`（sub-THU202311180133，3 个 task）在容器启动前 FAILED、127:0，用时 2 秒。指定镜像 `/ibmgpfs/cuizaixu_lab/xuxiaoyu/softwarepackages/singularity/fmriprep-25.2.7.simg` 的父目录权限是 700，仅 xuxiaoyu 可访问；xuhaoshu 无进入／读取权限。当前账号可读镜像目录没有 25.2.7。已向用户说明并请求开放读取权限或提供可读的 25.2.7 镜像／环境；未绕过权限、未使用旧版实现代替、未重算完整 fMRIPrep。旧 confounds 和 XCP-D 均未修改。
+
+用户询问为何需要镜像：指定脚本本身通过 singularity exec 调用 25.2.7 的修正实现和依赖，而非单纯 Bash 数值计算。容器不是算法的必要形式，但正确版本的 FSLMotionParams、FD、ExpandModel 和依赖环境是必要条件；项目 uv 环境目前未安装完整 fMRIPrep 依赖。继续准备核验和替换入口，计算等待可用的指定版本环境。
+
+## 核验、替换与清理入口
+
+新增 `refresh_thu_task_confounds.sbatch`（q_fat_c、3 CPU）和 `refresh_thu_task_confounds.py`。从根目录以 `python -m scripts.neuroimaging.refresh_thu_task_confounds` 执行，复用 rest 的同一个 `audit_run`，无 sys.path 修改或新依赖。参数为 `--refresh-root <本轮目录> --jobs <subject/job_id TSV>`，可加 `--subjects <首人名单>` 做试跑检查；不加 `--apply` 只核验，完整范围加 `--apply` 才备份覆盖、归档旧日志和表格、删除有明确归属的 task XCP-D/work/temp 与旧独立 FC、重新 prepare 并提交原试跑→全批→审计链。
+
+入口验证所有重算作业 COMPLETED／0:0、TSV／JSON 与原清单完全匹配、24 项与 50 mm FD 的数值一致、非头动列不变和帧数不变。覆盖前保留压缩备份与原 fMRIPrep marker，使用逐文件原子替换，追加含 25.2.7 来源的 confounds_override。删除前验证旧成功作业的终态、活动作业与锁，以及每个 owner／子路径的边界和符号链接；保留日志和删除明细，不删除 rest、fMRIPrep 影像、BIDS 或 FreeSurfer。全量 prepare 完成后就绪名单须仍等于原 1,507-run 范围。部分覆盖后不自动重试，已有备份或 override 时要求先审阅对应记录。
+
+本地完整测试发现 43 项，41 项通过、2 项因本地无 Nilearn 跳过（容器专用投影测试在前轮已通过），耗时 13.174 秒。新增验证覆盖 task 与 rest 共用的运动／FD／非头动不变性、只枚举 task 归属清理目标、拒绝 owner／child 符号链接和拒绝 rest 配置。三个新增 shell 入口通过 bash -n，Python 模块 --help 和 git diff --check 通过；本轮合成目录已自动清理，前轮已记录的清理受限目录未另行操作。
+
+## 用户指定复制镜像
+
+用户进一步要求将镜像复制到 `/ibmgpfs/cuizaixu_lab/xuhaoshu/packages/singularity/` 再使用。已尝试从指定原镜像复制到该目录的 `fmriprep-25.2.7.simg`，采用 `.copying` 临时文件、大小核验后更名；但在打开源文件时仍被真实文件系统权限拒绝，未生成目标镜像，也未创建部分副本。已说明复制仍需要源目录／文件读取权限，请用户开放源读取或由有权限账号放置镜像。任务计算入口已改为用户指定的自有目标路径，尚不能启动真实重算。

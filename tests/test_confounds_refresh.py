@@ -67,6 +67,26 @@ class ConfoundsRefreshTests(unittest.TestCase):
         self.assertEqual(result["changed_columns"], "framewise_displacement")
         self.assertEqual(result["frames"], 5)
 
+    def test_task_scope_uses_the_same_motion_invariants(self):
+        previous_target = self.target
+        previous_cifti = derivative_path(self.config, self.scan, "fmriprep", "space-fsLR_den-91k_bold.dtseries.nii")
+        previous_json = self.source.with_suffix(".json")
+        self.config["scope"] = "task"
+        self.scan.update(task="nback", scan_id="sub-THU1_task-nback", run="")
+        self.target = derivative_path(self.config, self.scan, "fmriprep", "desc-confounds_timeseries.tsv")
+        self.target.parent.mkdir(parents=True)
+        shutil.copyfile(previous_target, self.target)
+        cifti = derivative_path(self.config, self.scan, "fmriprep", "space-fsLR_den-91k_bold.dtseries.nii")
+        shutil.copyfile(previous_cifti, cifti)
+        self.source = self.source.with_name(self.target.name)
+        self.write(self.source)
+        shutil.copyfile(previous_json, self.source.with_suffix(".json"))
+        self.assertEqual(AUDIT_RUN(self.config, self.scan, self.source_root)["frames"], 5)
+        self.rows[2]["global_signal"] = "999"
+        self.write(self.source)
+        with self.assertRaisesRegex(AssertionError, "Non-motion confounds changed"):
+            AUDIT_RUN(self.config, self.scan, self.source_root)
+
     def test_reject_unrelated_signal_change(self):
         self.rows[2]["global_signal"] = "999"
         self.write(self.source)
