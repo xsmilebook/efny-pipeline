@@ -2,6 +2,8 @@
 
 ## 实现状态与输入限制
 
+**2026-11-01 更新：正在补做 task 的 fMRIPrep 25.2.7 头动参数修复，并重新生成 XCP-D。** 下文 2026-10-29 的完成计数是修复前版本的历史执行／审计结果；修复后的版本须重新核验。当前构建官方 25.2.7 头动工具镜像，随后按原范围核验并替换 24 个 motion 项与 FD，备份清理旧下游后重跑，进展见[头动修复记录](sessions/2026-11-01_task_motion_refresh.md)。已有 task HRF 效应和 STC 采样偏移不随该修复改变。
+
 2026-10-28 已实现 THU task XCP-D、协变量就绪审计、逐 run 头动描述、background FC 导出及完成审计。2026-10-29 修复唯一报告失败例后，三个任务的 XCP-D 全批审计均通过：SST 562、nback 513、switch 432，共 1,507 个 run；另 15 个缺少协变量的 run 未提交。原始作业见[提交记录](sessions/2026-10-28_task_background_submission.md)，恢复与最终对账见[恢复记录](sessions/2026-10-29_task_background_recovery.md)。当前已完成 XCP-D 残差、三图谱时序及其逐 run Pearson FC；独立 background_fc 的 r／Fisher z 导出和头动描述阶段尚未运行。
 
 外部输入为 `/ibmgpfs/cuizaixu_lab/xuxiaoyu/BrainProject/THU/custom_confounds_TASK`，生成器版本现为 `build_task_confounds.py` 1.4.0。只读取 `sub-*/func/*_desc-confounds_timeseries.tsv` 和 JSON，不将同目录 events TSV 混入回归。
